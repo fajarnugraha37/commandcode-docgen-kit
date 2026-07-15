@@ -1,0 +1,2595 @@
+openapi: 3.0.3
+info:
+  title: Sentinel Enforcement Platform API
+  version: 0.1.0
+  description: Phase 0-5 vertical slice for health, report intake, authorization, case lifecycle, workflow, and storage-backed evidence intake.
+servers:
+  - url: http://localhost:8080
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      tags:
+        - health
+      responses:
+        '200':
+          description: Application and database are healthy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /api/v1/reports:
+    post:
+      operationId: createReport
+      tags:
+        - reports
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReportRequest'
+      responses:
+        '201':
+          description: Report created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportResponse'
+        '400':
+          description: Request body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to create the report.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/reports/{reportId}:
+    get:
+      operationId: getReport
+      tags:
+        - reports
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: reportId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Report found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportResponse'
+        '404':
+          description: Report not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/reports/{reportId}/triage:
+    post:
+      operationId: triageReport
+      tags:
+        - reports
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: reportId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TriageReportRequest'
+      responses:
+        '200':
+          description: Report triaged.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportResponse'
+        '400':
+          description: Request body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to triage the report.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Report not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Report cannot be triaged in its current state or version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/cases:
+    post:
+      operationId: createCase
+      tags:
+        - cases
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCaseRequest'
+      responses:
+        '201':
+          description: Case created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseResponse'
+        '400':
+          description: Request body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to create the case.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Source report not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Request conflicts with current case state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      operationId: listCases
+      tags:
+        - cases
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+          description: Opaque cursor returned by the previous page for the same filter and sort scope.
+        - in: query
+          name: q
+          schema:
+            type: string
+          description: Quick search keyword matched across case number, title, summary, assignment, and creator fields.
+        - in: query
+          name: searchField
+          schema:
+            $ref: '#/components/schemas/CaseListSearchField'
+          description: Target a single searchable case field. Must be paired with `searchValue`.
+        - in: query
+          name: searchValue
+          schema:
+            type: string
+          description: Keyword used with `searchField` for single-field matching.
+        - in: query
+          name: status
+          schema:
+            $ref: '#/components/schemas/CaseStatusValue'
+        - in: query
+          name: classification
+          schema:
+            $ref: '#/components/schemas/CaseClassificationValue'
+        - in: query
+          name: assignedUnitId
+          schema:
+            type: string
+        - in: query
+          name: assigneeUserId
+          schema:
+            type: string
+        - in: query
+          name: createdBy
+          schema:
+            type: string
+        - in: query
+          name: reportId
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: sortBy
+          schema:
+            $ref: '#/components/schemas/CaseListSortBy'
+          description: Defaults to `CREATED_AT`.
+        - in: query
+          name: sortDirection
+          schema:
+            $ref: '#/components/schemas/SortDirection'
+          description: Defaults to `DESC`.
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        '200':
+          description: Case page loaded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseListResponse'
+        '400':
+          description: Invalid pagination request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to list cases.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/cases/{caseId}:
+    get:
+      operationId: getCase
+      tags:
+        - cases
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: caseId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Case found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to read the case.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Case not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/cases/{caseId}/assignments:
+    post:
+      operationId: assignCase
+      tags:
+        - cases
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: caseId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignCaseRequest'
+      responses:
+        '200':
+          description: Case assignment updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseResponse'
+        '400':
+          description: Request body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to assign the case.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Case not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Request conflicts with current case state or version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/cases/{caseId}/transitions:
+    post:
+      operationId: transitionCase
+      tags:
+        - cases
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: caseId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransitionCaseRequest'
+      responses:
+        '200':
+          description: Case transitioned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseResponse'
+        '400':
+          description: Request body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to transition the case.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Case not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Request conflicts with current case state or version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/cases/{caseId}/audit-events:
+    get:
+      operationId: getCaseAuditEvents
+      tags:
+        - cases
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: caseId
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: cursor
+          schema:
+            type: string
+          description: Opaque cursor returned by the previous page for the same filter and sort scope.
+        - in: query
+          name: q
+          schema:
+            type: string
+          description: Quick search keyword matched across event type, action, actor, result, reason, resource, and correlation fields.
+        - in: query
+          name: searchField
+          schema:
+            $ref: '#/components/schemas/AuditEventListSearchField'
+          description: Target a single searchable audit field. Must be paired with `searchValue`.
+        - in: query
+          name: searchValue
+          schema:
+            type: string
+          description: Keyword used with `searchField` for single-field matching.
+        - in: query
+          name: actorId
+          schema:
+            type: string
+        - in: query
+          name: eventType
+          schema:
+            type: string
+        - in: query
+          name: action
+          schema:
+            type: string
+        - in: query
+          name: result
+          schema:
+            type: string
+        - in: query
+          name: sortBy
+          schema:
+            $ref: '#/components/schemas/AuditEventListSortBy'
+          description: Defaults to `TIMESTAMP`.
+        - in: query
+          name: sortDirection
+          schema:
+            $ref: '#/components/schemas/SortDirection'
+          description: Defaults to `DESC`.
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: Audit events loaded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseAuditEventListResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to read case audit events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Case not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/cases/{caseId}/recommendations:
+    post:
+      operationId: createRecommendation
+      tags:
+        - recommendations
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: caseId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRecommendationRequest'
+      responses:
+        '201':
+          description: Recommendation created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationResponse'
+        '400':
+          description: Request body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to create the recommendation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Case not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Recommendation conflicts with current case or recommendation state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/recommendations/{recommendationId}/submit:
+    post:
+      operationId: submitRecommendation
+      tags:
+        - recommendations
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: recommendationId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Recommendation submitted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to submit the recommendation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Recommendation not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Recommendation cannot be submitted in its current state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/recommendations/{recommendationId}/reviews:
+    post:
+      operationId: reviewRecommendation
+      tags:
+        - recommendations
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: recommendationId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewRecommendationRequest'
+      responses:
+        '200':
+          description: Recommendation reviewed and approved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationResponse'
+        '400':
+          description: Request body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to review the recommendation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Recommendation not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Recommendation review violates maker-checker or current state rules.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/cases/{caseId}/decisions:
+    post:
+      operationId: createDecision
+      tags:
+        - decisions
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: caseId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDecisionRequest'
+      responses:
+        '201':
+          description: Decision created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecisionResponse'
+        '400':
+          description: Request body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to create the decision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Case not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Decision conflicts with current case, recommendation, or decision state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/decisions/{decisionId}/approve:
+    post:
+      operationId: approveDecision
+      tags:
+        - decisions
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: decisionId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Decision approved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecisionResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to approve the decision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Decision not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Decision approval violates maker-checker or current state rules.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/decisions/{decisionId}/publish:
+    post:
+      operationId: publishDecision
+      tags:
+        - decisions
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: decisionId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Decision published.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecisionResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to publish the decision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Decision not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Decision cannot be published in its current state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/decisions/{decisionId}/appeals:
+    post:
+      operationId: createAppeal
+      tags:
+        - appeals
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: decisionId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAppealRequest'
+      responses:
+        '201':
+          description: Appeal created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppealResponse'
+        '400':
+          description: Request body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to create the appeal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Decision not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Appeal conflicts with deadline, existing appeal, or current case state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/appeals/{appealId}/decisions:
+    post:
+      operationId: decideAppeal
+      tags:
+        - appeals
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: appealId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecideAppealRequest'
+      responses:
+        '200':
+          description: Appeal decision recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppealResponse'
+        '400':
+          description: Request body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to decide the appeal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Appeal not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Appeal cannot be decided in its current state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/cases/{caseId}/evidence/upload-sessions:
+    post:
+      operationId: createEvidenceUploadSession
+      tags:
+        - evidence
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: caseId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEvidenceUploadSessionRequest'
+      responses:
+        '201':
+          description: Evidence upload session created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateEvidenceUploadSessionResponse'
+        '400':
+          description: Request body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to create the upload session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Case not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Evidence storage is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/evidence/{evidenceId}:
+    get:
+      operationId: getEvidence
+      tags:
+        - evidence
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: evidenceId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Evidence found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidenceResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to read evidence.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Evidence not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/evidence/{evidenceId}/versions/finalize:
+    post:
+      operationId: finalizeEvidenceVersion
+      tags:
+        - evidence
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: evidenceId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FinalizeEvidenceVersionRequest'
+      responses:
+        '200':
+          description: Evidence version finalized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidenceResponse'
+        '400':
+          description: Request body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to finalize evidence.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Evidence not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Evidence finalize request conflicts with current storage or domain state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Evidence storage is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/evidence/{evidenceId}/download-sessions:
+    post:
+      operationId: createEvidenceDownloadSession
+      tags:
+        - evidence
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: evidenceId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEvidenceDownloadSessionRequest'
+      responses:
+        '201':
+          description: Evidence download session created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateEvidenceDownloadSessionResponse'
+        '400':
+          description: Request body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to download evidence.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Evidence not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Evidence storage is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/tasks:
+    get:
+      operationId: listTasks
+      tags:
+        - tasks
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+          description: Opaque cursor returned by the previous page for the same filter and sort scope.
+        - in: query
+          name: q
+          schema:
+            type: string
+          description: Quick search keyword matched across task name, task definition key, case number, case title, assignee, and jurisdiction fields.
+        - in: query
+          name: searchField
+          schema:
+            $ref: '#/components/schemas/WorkflowTaskSearchField'
+          description: Target a single searchable task field. Must be paired with `searchValue`.
+        - in: query
+          name: searchValue
+          schema:
+            type: string
+          description: Keyword used with `searchField` for single-field matching.
+        - in: query
+          name: caseId
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: assigneeUserId
+          schema:
+            type: string
+        - in: query
+          name: state
+          schema:
+            $ref: '#/components/schemas/WorkflowTaskStateValue'
+        - in: query
+          name: sortBy
+          schema:
+            $ref: '#/components/schemas/WorkflowTaskSortBy'
+          description: Defaults to `CREATED_AT`.
+        - in: query
+          name: sortDirection
+          schema:
+            $ref: '#/components/schemas/SortDirection'
+          description: Defaults to `DESC`.
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        '200':
+          description: Workflow task page loaded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowTaskListResponse'
+        '400':
+          description: Invalid pagination request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to list tasks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/tasks/{taskId}/claim:
+    post:
+      operationId: claimTask
+      tags:
+        - tasks
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Workflow task claimed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowTaskResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to claim the task.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Workflow task not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Workflow task is already claimed or no longer claimable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/tasks/{taskId}/complete:
+    post:
+      operationId: completeTask
+      tags:
+        - tasks
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Workflow task completed or already completed by an earlier identical request.
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to complete the task.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Workflow task not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Workflow task cannot be completed in its current state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/workflow-reconciliation:
+    get:
+      operationId: listWorkflowReconciliationIssues
+      tags:
+        - workflow-reconciliation
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+          description: Opaque cursor returned by the previous page for the same filter and sort scope.
+        - in: query
+          name: q
+          schema:
+            type: string
+          description: Quick search keyword matched across case number, case title, issue type, process instance id, and jurisdiction fields.
+        - in: query
+          name: searchField
+          schema:
+            $ref: '#/components/schemas/WorkflowReconciliationSearchField'
+          description: Target a single searchable reconciliation field. Must be paired with `searchValue`.
+        - in: query
+          name: searchValue
+          schema:
+            type: string
+          description: Keyword used with `searchField` for single-field matching.
+        - in: query
+          name: issueType
+          schema:
+            $ref: '#/components/schemas/WorkflowReconciliationIssueTypeValue'
+        - in: query
+          name: caseStatus
+          schema:
+            $ref: '#/components/schemas/CaseStatusValue'
+        - in: query
+          name: workflowCorrelationStatus
+          schema:
+            $ref: '#/components/schemas/WorkflowCorrelationStatusValue'
+        - in: query
+          name: sortBy
+          schema:
+            $ref: '#/components/schemas/WorkflowReconciliationSortBy'
+          description: Defaults to `CASE_UPDATED_AT`.
+        - in: query
+          name: sortDirection
+          schema:
+            $ref: '#/components/schemas/SortDirection'
+          description: Defaults to `DESC`.
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        '200':
+          description: Workflow reconciliation issues loaded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowReconciliationIssueListResponse'
+        '400':
+          description: Invalid pagination request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to inspect workflow reconciliation issues.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/workflow-reconciliation/{caseId}/actions:
+    post:
+      operationId: reconcileWorkflowCase
+      tags:
+        - workflow-reconciliation
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: caseId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReconcileWorkflowRequest'
+      responses:
+        '200':
+          description: Workflow reconciliation action completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowReconciliationActionResponse'
+        '401':
+          description: Request is unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Authenticated actor is not allowed to reconcile workflow state for the case.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Case not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Workflow mismatch cannot be auto-repaired in the current state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    CreateReportRequest:
+      type: object
+      required:
+        - title
+        - description
+        - jurisdictionCode
+        - reporterName
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        jurisdictionCode:
+          type: string
+          minLength: 1
+          maxLength: 16
+        reporterName:
+          type: string
+          minLength: 1
+          maxLength: 100
+    TriageReportRequest:
+      type: object
+      required:
+        - expectedVersion
+        - reason
+      properties:
+        expectedVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    ReportResponse:
+      type: object
+      required:
+        - id
+        - title
+        - description
+        - jurisdictionCode
+        - reporterName
+        - status
+        - createdAt
+        - createdBy
+        - updatedAt
+        - updatedBy
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        jurisdictionCode:
+          type: string
+        reporterName:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+        updatedBy:
+          type: string
+        version:
+          type: integer
+          format: int64
+    EvidenceClassificationValue:
+      type: string
+      enum:
+        - PUBLIC
+        - CONFIDENTIAL
+        - SECRET
+    EvidenceStorageStatusValue:
+      type: string
+      enum:
+        - PENDING_UPLOAD
+        - ACTIVE
+    CreateEvidenceUploadSessionRequest:
+      type: object
+      required:
+        - title
+        - classification
+        - originalFilename
+        - mediaType
+        - sizeBytes
+        - sha256Checksum
+      properties:
+        existingEvidenceId:
+          type: string
+          format: uuid
+          nullable: true
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        classification:
+          $ref: '#/components/schemas/EvidenceClassificationValue'
+        originalFilename:
+          type: string
+          minLength: 1
+          maxLength: 255
+        mediaType:
+          type: string
+          minLength: 1
+          maxLength: 255
+        sizeBytes:
+          type: integer
+          format: int64
+          minimum: 0
+        sha256Checksum:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+    CreateEvidenceUploadSessionResponse:
+      type: object
+      required:
+        - evidenceId
+        - uploadSessionId
+        - targetVersionNumber
+        - uploadUrl
+        - expiresAt
+        - objectKey
+      properties:
+        evidenceId:
+          type: string
+          format: uuid
+        uploadSessionId:
+          type: string
+          format: uuid
+        targetVersionNumber:
+          type: integer
+          format: int32
+        uploadUrl:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        objectKey:
+          type: string
+    FinalizeEvidenceVersionRequest:
+      type: object
+      required:
+        - uploadSessionId
+      properties:
+        uploadSessionId:
+          type: string
+          format: uuid
+    CreateEvidenceDownloadSessionRequest:
+      type: object
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    CreateEvidenceDownloadSessionResponse:
+      type: object
+      required:
+        - downloadUrl
+        - expiresAt
+      properties:
+        downloadUrl:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+    EvidenceVersionResponse:
+      type: object
+      required:
+        - id
+        - evidenceId
+        - versionNumber
+        - originalFilename
+        - generatedFilename
+        - bucket
+        - objectKey
+        - mediaType
+        - sizeBytes
+        - sha256Checksum
+        - uploadedAt
+        - uploadedBy
+        - createdAt
+        - createdBy
+      properties:
+        id:
+          type: string
+          format: uuid
+        evidenceId:
+          type: string
+          format: uuid
+        versionNumber:
+          type: integer
+          format: int32
+        originalFilename:
+          type: string
+        generatedFilename:
+          type: string
+        bucket:
+          type: string
+        objectKey:
+          type: string
+        mediaType:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        sha256Checksum:
+          type: string
+        uploadedAt:
+          type: string
+          format: date-time
+        uploadedBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+    EvidenceResponse:
+      type: object
+      required:
+        - id
+        - caseId
+        - title
+        - classification
+        - storageStatus
+        - latestVersion
+        - createdAt
+        - createdBy
+        - updatedAt
+        - updatedBy
+        - version
+        - latestVersionMetadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        caseId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        classification:
+          $ref: '#/components/schemas/EvidenceClassificationValue'
+        storageStatus:
+          $ref: '#/components/schemas/EvidenceStorageStatusValue'
+        latestVersion:
+          type: integer
+          format: int32
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+        updatedBy:
+          type: string
+        version:
+          type: integer
+          format: int64
+        latestVersionMetadata:
+          $ref: '#/components/schemas/EvidenceVersionResponse'
+    CreateCaseRequest:
+      type: object
+      required:
+        - reportId
+        - title
+        - summary
+        - classification
+      properties:
+        reportId:
+          type: string
+          format: uuid
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        summary:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        classification:
+          $ref: '#/components/schemas/CaseClassificationValue'
+    CaseClassificationValue:
+      type: string
+      enum:
+        - PUBLIC
+        - CONFIDENTIAL
+        - SECRET
+    AssignCaseRequest:
+      type: object
+      required:
+        - assignedUnitId
+        - assigneeUserId
+        - expectedVersion
+        - reason
+      properties:
+        assignedUnitId:
+          type: string
+          minLength: 1
+          maxLength: 64
+        assigneeUserId:
+          type: string
+          minLength: 1
+          maxLength: 100
+        expectedVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    TransitionCaseRequest:
+      type: object
+      required:
+        - targetStatus
+        - expectedVersion
+        - reason
+      properties:
+        targetStatus:
+          $ref: '#/components/schemas/CaseStatusValue'
+        expectedVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    CreateRecommendationRequest:
+      type: object
+      required:
+        - title
+        - summary
+        - proposedDecision
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        summary:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        proposedDecision:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        proposedSanction:
+          type: string
+          nullable: true
+          maxLength: 2000
+    ReviewRecommendationRequest:
+      type: object
+      required:
+        - reviewSummary
+      properties:
+        reviewSummary:
+          type: string
+          minLength: 1
+          maxLength: 2000
+    RecommendationStatusValue:
+      type: string
+      enum:
+        - DRAFT
+        - SUBMITTED
+        - APPROVED
+    RecommendationResponse:
+      type: object
+      required:
+        - id
+        - caseId
+        - title
+        - summary
+        - proposedDecision
+        - status
+        - createdAt
+        - createdBy
+        - updatedAt
+        - updatedBy
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        caseId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        summary:
+          type: string
+        proposedDecision:
+          type: string
+        proposedSanction:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/RecommendationStatusValue'
+        submittedAt:
+          type: string
+          format: date-time
+          nullable: true
+        submittedBy:
+          type: string
+          nullable: true
+        approvedReviewId:
+          type: string
+          format: uuid
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+        updatedBy:
+          type: string
+        version:
+          type: integer
+          format: int64
+    CreateDecisionRequest:
+      type: object
+      required:
+        - title
+        - summary
+        - violationProven
+        - appealDeadline
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        summary:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        violationProven:
+          type: boolean
+        sanctionSummary:
+          type: string
+          nullable: true
+          maxLength: 2000
+        obligationTitle:
+          type: string
+          nullable: true
+          maxLength: 200
+        obligationDetails:
+          type: string
+          nullable: true
+          maxLength: 2000
+        obligationDueDate:
+          type: string
+          format: date
+          nullable: true
+        appealDeadline:
+          type: string
+          format: date
+    DecisionStatusValue:
+      type: string
+      enum:
+        - DRAFT
+        - APPROVED
+        - PUBLISHED
+    DecisionResponse:
+      type: object
+      required:
+        - id
+        - caseId
+        - recommendationId
+        - title
+        - summary
+        - violationProven
+        - appealDeadline
+        - status
+        - createdAt
+        - createdBy
+        - updatedAt
+        - updatedBy
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        caseId:
+          type: string
+          format: uuid
+        recommendationId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        summary:
+          type: string
+        violationProven:
+          type: boolean
+        sanctionSummary:
+          type: string
+          nullable: true
+        obligationTitle:
+          type: string
+          nullable: true
+        obligationDetails:
+          type: string
+          nullable: true
+        obligationDueDate:
+          type: string
+          format: date
+          nullable: true
+        appealDeadline:
+          type: string
+          format: date
+        status:
+          $ref: '#/components/schemas/DecisionStatusValue'
+        approvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        approvedBy:
+          type: string
+          nullable: true
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        publishedBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+        updatedBy:
+          type: string
+        version:
+          type: integer
+          format: int64
+    CreateAppealRequest:
+      type: object
+      required:
+        - rationale
+        - submittedAt
+      properties:
+        rationale:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        submittedAt:
+          type: string
+          format: date-time
+        supervisorOverride:
+          type: boolean
+        supervisorOverrideReason:
+          type: string
+          nullable: true
+          maxLength: 2000
+    AppealDecisionOutcomeValue:
+      type: string
+      enum:
+        - DENIED
+        - GRANTED
+    DecideAppealRequest:
+      type: object
+      required:
+        - outcome
+        - summary
+      properties:
+        outcome:
+          $ref: '#/components/schemas/AppealDecisionOutcomeValue'
+        summary:
+          type: string
+          minLength: 1
+          maxLength: 2000
+    AppealStatusValue:
+      type: string
+      enum:
+        - ACTIVE
+        - DECIDED
+    AppealResponse:
+      type: object
+      required:
+        - id
+        - caseId
+        - decisionId
+        - rationale
+        - supervisorOverride
+        - status
+        - submittedAt
+        - submittedBy
+        - createdAt
+        - createdBy
+        - updatedAt
+        - updatedBy
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        caseId:
+          type: string
+          format: uuid
+        decisionId:
+          type: string
+          format: uuid
+        rationale:
+          type: string
+        supervisorOverride:
+          type: boolean
+        supervisorOverrideReason:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/AppealStatusValue'
+        submittedAt:
+          type: string
+          format: date-time
+        submittedBy:
+          type: string
+        decidedByAppealDecisionId:
+          type: string
+          format: uuid
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+        updatedBy:
+          type: string
+        version:
+          type: integer
+          format: int64
+    CaseStatusValue:
+      type: string
+      enum:
+        - CREATED
+        - UNDER_TRIAGE
+        - UNDER_INVESTIGATION
+        - PENDING_REVIEW
+        - PENDING_DECISION
+        - DECIDED
+        - UNDER_APPEAL
+        - ENFORCEMENT_IN_PROGRESS
+        - CLOSED
+        - CANCELLED
+    CaseResponse:
+      type: object
+      required:
+        - id
+        - caseNumber
+        - reportId
+        - title
+        - summary
+        - jurisdictionCode
+        - classification
+        - status
+        - createdAt
+        - createdBy
+        - updatedAt
+        - updatedBy
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        caseNumber:
+          type: string
+        reportId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        summary:
+          type: string
+        jurisdictionCode:
+          type: string
+        classification:
+          $ref: '#/components/schemas/CaseClassificationValue'
+        status:
+          $ref: '#/components/schemas/CaseStatusValue'
+        assignedUnitId:
+          type: string
+          nullable: true
+        assigneeUserId:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+        updatedBy:
+          type: string
+        version:
+          type: integer
+          format: int64
+    CaseListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaseResponse'
+        nextCursor:
+          type: string
+          nullable: true
+    CaseListSearchField:
+      type: string
+      enum:
+        - CASE_NUMBER
+        - TITLE
+        - SUMMARY
+        - CLASSIFICATION
+        - ASSIGNED_UNIT_ID
+        - ASSIGNEE_USER_ID
+        - CREATED_BY
+    CaseListSortBy:
+      type: string
+      enum:
+        - CREATED_AT
+        - UPDATED_AT
+        - CASE_NUMBER
+        - TITLE
+        - CLASSIFICATION
+        - STATUS
+    AuditEventListSearchField:
+      type: string
+      enum:
+        - EVENT_TYPE
+        - ACTION
+        - ACTOR_ID
+        - RESULT
+        - REASON
+        - RESOURCE_TYPE
+        - RESOURCE_ID
+        - CORRELATION_ID
+    AuditEventListSortBy:
+      type: string
+      enum:
+        - TIMESTAMP
+        - EVENT_TYPE
+        - ACTION
+        - RESULT
+        - ACTOR_ID
+    SortDirection:
+      type: string
+      enum:
+        - ASC
+        - DESC
+    CaseAuditEventResponse:
+      type: object
+      required:
+        - eventId
+        - eventType
+        - actorType
+        - actorId
+        - actorRoles
+        - action
+        - resourceType
+        - resourceId
+        - caseId
+        - timestamp
+        - correlationId
+        - result
+        - metadata
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        eventType:
+          type: string
+        actorType:
+          type: string
+        actorId:
+          type: string
+        actorRoles:
+          type: array
+          items:
+            type: string
+        action:
+          type: string
+        resourceType:
+          type: string
+        resourceId:
+          type: string
+        caseId:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+        sourceIp:
+          type: string
+          nullable: true
+        result:
+          type: string
+        reason:
+          type: string
+          nullable: true
+        beforeSummary:
+          type: string
+          nullable: true
+        afterSummary:
+          type: string
+          nullable: true
+        metadata:
+          type: string
+    CaseAuditEventListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaseAuditEventResponse'
+        nextCursor:
+          type: string
+          nullable: true
+    WorkflowTaskResponse:
+      type: object
+      required:
+        - taskId
+        - name
+        - taskDefinitionKey
+        - processInstanceId
+        - caseId
+        - caseNumber
+        - caseTitle
+        - caseStatus
+        - jurisdictionCode
+        - createdAt
+        - state
+      properties:
+        taskId:
+          type: string
+        name:
+          type: string
+        taskDefinitionKey:
+          type: string
+        processInstanceId:
+          type: string
+        caseId:
+          type: string
+          format: uuid
+        caseNumber:
+          type: string
+        caseTitle:
+          type: string
+        caseStatus:
+          $ref: '#/components/schemas/CaseStatusValue'
+        jurisdictionCode:
+          type: string
+        assigneeUserId:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        state:
+          $ref: '#/components/schemas/WorkflowTaskStateValue'
+    WorkflowTaskListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowTaskResponse'
+        nextCursor:
+          type: string
+          nullable: true
+    WorkflowTaskSearchField:
+      type: string
+      enum:
+        - TASK_NAME
+        - TASK_DEFINITION_KEY
+        - CASE_NUMBER
+        - CASE_TITLE
+        - CASE_SUMMARY
+        - ASSIGNEE_USER_ID
+        - JURISDICTION_CODE
+    WorkflowTaskSortBy:
+      type: string
+      enum:
+        - CREATED_AT
+        - TASK_NAME
+        - CASE_NUMBER
+        - CASE_STATUS
+    WorkflowTaskStateValue:
+      type: string
+      enum:
+        - READY
+        - CLAIMED
+        - COMPLETED
+    WorkflowReconciliationIssueResponse:
+      type: object
+      required:
+        - caseId
+        - caseNumber
+        - caseTitle
+        - caseStatus
+        - jurisdictionCode
+        - caseUpdatedAt
+        - issueType
+        - detail
+        - availableActions
+      properties:
+        caseId:
+          type: string
+          format: uuid
+        caseNumber:
+          type: string
+        caseTitle:
+          type: string
+        caseStatus:
+          $ref: '#/components/schemas/CaseStatusValue'
+        jurisdictionCode:
+          type: string
+        assigneeUserId:
+          type: string
+          nullable: true
+        caseUpdatedAt:
+          type: string
+          format: date-time
+        issueType:
+          $ref: '#/components/schemas/WorkflowReconciliationIssueTypeValue'
+        detail:
+          type: string
+        workflowCorrelationStatus:
+          $ref: '#/components/schemas/WorkflowCorrelationStatusValue'
+          nullable: true
+        correlationProcessInstanceId:
+          type: string
+          nullable: true
+        runtimeProcessInstanceId:
+          type: string
+          nullable: true
+        availableActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowReconciliationOperationValue'
+    WorkflowReconciliationIssueListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowReconciliationIssueResponse'
+        nextCursor:
+          type: string
+          nullable: true
+    WorkflowReconciliationSearchField:
+      type: string
+      enum:
+        - CASE_NUMBER
+        - CASE_TITLE
+        - ISSUE_TYPE
+        - PROCESS_INSTANCE_ID
+        - JURISDICTION_CODE
+    WorkflowReconciliationSortBy:
+      type: string
+      enum:
+        - CASE_UPDATED_AT
+        - CASE_NUMBER
+        - CASE_STATUS
+        - ISSUE_TYPE
+        - CORRELATION_STATUS
+    WorkflowReconciliationIssueTypeValue:
+      type: string
+      enum:
+        - ACTIVE_RUNTIME_MISSING_CORRELATION
+        - ACTIVE_RUNTIME_CORRELATION_MISMATCH
+        - ACTIVE_CASE_WORKFLOW_NOT_RUNNING
+        - ACTIVE_CASE_CORRELATION_TERMINAL
+        - TERMINAL_CASE_RUNTIME_ACTIVE
+        - TERMINAL_CASE_CORRELATION_ACTIVE
+        - TERMINAL_CASE_MISSING_CORRELATION
+    WorkflowCorrelationStatusValue:
+      type: string
+      enum:
+        - ACTIVE
+        - COMPLETED
+        - CANCELLED
+    WorkflowReconciliationOperationValue:
+      type: string
+      enum:
+        - AUTO_REPAIR
+        - TERMINATE_RUNTIME
+    ReconcileWorkflowRequest:
+      type: object
+      required:
+        - action
+        - reason
+      properties:
+        action:
+          $ref: '#/components/schemas/WorkflowReconciliationOperationValue'
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    WorkflowReconciliationActionResultValue:
+      type: string
+      enum:
+        - REPAIRED
+        - MANUAL_ACTION_REQUIRED
+    WorkflowReconciliationActionResponse:
+      type: object
+      required:
+        - caseId
+        - action
+        - result
+        - issueType
+        - detail
+      properties:
+        caseId:
+          type: string
+          format: uuid
+        action:
+          $ref: '#/components/schemas/WorkflowReconciliationOperationValue'
+        result:
+          $ref: '#/components/schemas/WorkflowReconciliationActionResultValue'
+        issueType:
+          $ref: '#/components/schemas/WorkflowReconciliationIssueTypeValue'
+        detail:
+          type: string
+        workflowCorrelationStatus:
+          $ref: '#/components/schemas/WorkflowCorrelationStatusValue'
+          nullable: true
+        processInstanceId:
+          type: string
+          nullable: true
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - database
+        - timestamp
+      properties:
+        status:
+          type: string
+        database:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+    ErrorResponse:
+      type: object
+      required:
+        - type
+        - title
+        - status
+        - code
+        - detail
+        - instance
+        - correlationId
+        - violations
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        code:
+          type: string
+        detail:
+          type: string
+        instance:
+          type: string
+        correlationId:
+          type: string
+        violations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Violation'
+    Violation:
+      type: object
+      required:
+        - field
+        - message
+      properties:
+        field:
+          type: string
+        message:
+          type: string
