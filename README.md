@@ -38,22 +38,25 @@ Install the engine once. Initialize any number of repositories independently.
 
 ---
 
-## What's new in v0.3.0
+## What's new in v0.4.0
 
-- live asynchronous Command Code process monitoring instead of silent blocking execution;
-- phase and page progress bars;
-- configurable heartbeat and no-output warnings;
-- per-run stdout/stderr log files and richer run metadata;
-- explicit classification for authentication, permission, rate-limit, network, API 5xx, max-turn, and interruption failures;
-- default `comprehensive` quality profile;
-- coverage-driven manifest contracts with required sections, diagram intents, audiences, related pages, and quality hints;
-- automatic page enrichment after first-pass generation;
-- automatic audit repair and re-audit in the full pipeline;
-- local anti-shallowness and audit severity quality gates via `docgen quality`;
-- fixed global-first agent instructions so skills are referenced by installed capability name rather than an incorrect project-local `.commandcode/skills/**` path;
-- self-contained project-local mode now uses the same v0.3.0 engine as global mode.
+v0.4.0 upgrades DocGen from a code-oriented documentation generator into a **deep multi-page system knowledge-base generator**. The target is breadth and depth comparable to a curated Mintlify-style site, while remaining source-grounded.
 
----
+Major additions:
+
+- resilient evidence-index normalization that fixes the `missing required key: artifacts` failure even when a model emits `files`, `entries`, or only artifact files;
+- a dedicated `doc-domain-analyst` semantics stage;
+- normalized `business.json`, `flows.json`, and `catalogs.json`;
+- business capabilities, actors, concepts, rules, validations, decisions, branch conditions, lifecycles, invariants and use cases;
+- six distinct flow types: business, control, request, traffic, data and event;
+- exhaustive endpoint catalog support;
+- exhaustive Kafka/RabbitMQ/queue/stream handler and producer catalog support;
+- external/internal/cloud service and dependency catalogs;
+- category-rich multi-page navigation planning with coverage tags and automatic coverage-repair planning;
+- `docs/SUMMARY.md` generation from the manifest navigation tree;
+- Mermaid-only diagram enforcement;
+- stronger audit checks for omitted rules, branches, flow steps, endpoints, handlers and dependencies;
+- default pipeline: discovery → technical analysis → semantics/catalog analysis → multi-page planning → generation/enrichment → audit/repair → quality gate.
 
 ## Table of contents
 
@@ -111,7 +114,10 @@ source repository
 source-grounded evidence
       │
       ▼
-normalized architecture/workflow model
+normalized technical architecture
+      │
+      ▼
+business + flow + catalog semantics
       │
       ▼
 documentation information architecture
@@ -150,7 +156,7 @@ DocGen does not require a particular renderer.
 
 Earlier versions of the kit copied the entire engine into every target repository. That model is useful for a fully self-contained team-owned repository, but it is inefficient when one user wants to use the same documentation system across many repositories.
 
-The default architecture in v0.3.0 is therefore:
+The default architecture in v0.4.0 is therefore:
 
 ```text
 install once globally
@@ -204,12 +210,12 @@ C:\Users\<username>\.commandcode\docgen
 
 The kit currently provides:
 
-- **5 specialized custom agents**
-- **22 reusable skills**
-- **12 global slash commands**
+- **6 specialized custom agents**
+- **28 reusable skills**
+- **13 global slash commands**
 - **conditional global hooks**
-- **9 JSON artifact schemas**
-- **8 bounded stage prompts**
+- **12 JSON artifact schemas**
+- **9 bounded stage prompts**
 - **a global cross-platform Node.js orchestrator**
 - **per-repository state and configuration**
 - **runtime compatibility diagnostics**
@@ -288,10 +294,10 @@ Extract the release ZIP first.
 
 ```powershell
 Expand-Archive `
-  .\commandcode-docgen-kit-0.3.0.zip `
+  .\commandcode-docgen-kit-0.4.0.zip `
   -DestinationPath .\commandcode-docgen-kit
 
-cd .\commandcode-docgen-kit\commandcode-docgen-kit-0.3.0
+cd .\commandcode-docgen-kit\commandcode-docgen-kit-0.4.0
 
 .\install.ps1
 ```
@@ -299,8 +305,8 @@ cd .\commandcode-docgen-kit\commandcode-docgen-kit-0.3.0
 ## macOS / Linux
 
 ```bash
-unzip commandcode-docgen-kit-0.3.0.zip
-cd commandcode-docgen-kit-0.3.0
+unzip commandcode-docgen-kit-0.4.0.zip
+cd commandcode-docgen-kit-0.4.0
 ./install.sh
 ```
 
@@ -390,7 +396,7 @@ The installer:
 
 1. installs five user-level custom agents;
 2. installs twenty-two user-level skills;
-3. installs ten user-level `/docgen-*` commands;
+3. installs thirteen user-level `/docgen-*` commands;
 4. installs the reusable engine under `~/.commandcode/docgen/`;
 5. merges conditional DocGen hooks into the existing user `settings.json`;
 6. preserves unrelated settings and hooks;
@@ -493,9 +499,11 @@ The first full run executes:
 ```text
 discover
    ↓
-analyze
+analyze technical architecture
    ↓
-plan
+semantics: business + six flow types + catalogs
+   ↓
+plan category-rich multi-page knowledge base
    ↓
 generate each planned page
    ↓
@@ -509,6 +517,7 @@ For a large repository, prefer an explicit staged workflow:
 ```bash
 docgen discover src/main/java
 docgen analyze
+docgen semantics
 docgen plan
 docgen generate --all
 docgen audit --all
@@ -519,14 +528,14 @@ docgen snapshot
 
 # Live progress, heartbeat, logs, and error visibility
 
-DocGen v0.3.0 does not run Command Code as a silent blocking child process. Every LLM-backed stage is monitored as a live asynchronous process.
+DocGen v0.4.0 does not run Command Code as a silent blocking child process. Every LLM-backed stage is monitored as a live asynchronous process.
 
 A run now looks like:
 
 ```text
-Phase 1/6 — discovery
+Phase 1/7 — evidence discovery
 
-==> discover: . | phase 1/6
+==> discover: . | phase 1/7
     cmdc -p --trust --skip-onboarding --yolo --max-turns 30 --verbose
     logs: .docgen/runs/<run>.stdout.log | .docgen/runs/<run>.stderr.log
 
@@ -652,7 +661,7 @@ Command Code reached --max-turns
 
 # Comprehensive quality profile
 
-The default v0.3.0 profile is:
+The default v0.4.0 profile is:
 
 ```json
 {
@@ -828,7 +837,7 @@ Phase 4/6  generate + enrich each page
 Phase 5/6  audit all pages
            fix pages with findings
            re-audit repaired pages
-Phase 6/6  quality summary + source snapshot
+Phase 7/7  quality summary + source snapshot
 ```
 
 For faster or cheaper operation, set another profile and disable automatic passes:
@@ -1150,6 +1159,35 @@ Primary output:
 .docgen/model/**
 ```
 
+## `doc-domain-analyst`
+
+Purpose:
+
+```text
+technical evidence + architecture → business semantics + flows + catalogs
+```
+
+Responsibilities:
+
+- actors and business capabilities;
+- domain concepts;
+- business rules and validations;
+- decisions and branch conditions;
+- lifecycles and invariants;
+- business, control, request, traffic, data and event flows;
+- complete endpoint inventory;
+- Kafka/RabbitMQ/queue/stream handler and producer inventory;
+- external/internal/cloud service and dependency inventory;
+- data stores and scheduled jobs.
+
+Primary outputs:
+
+```text
+.docgen/model/business.json
+.docgen/model/flows.json
+.docgen/model/catalogs.json
+```
+
 ## `doc-planner`
 
 Purpose:
@@ -1239,6 +1277,12 @@ doc-evidence-contract
 doc-repository-discovery
 doc-architecture-analysis
 doc-workflow-analysis
+doc-business-analysis
+doc-flow-analysis
+doc-data-model-analysis
+doc-api-catalog
+doc-messaging-catalog
+doc-integration-catalog
 doc-page-planning
 doc-concept-writing
 doc-guide-writing
@@ -1284,6 +1328,7 @@ The global installer provides:
 /docgen-doctor
 /docgen-discover
 /docgen-analyze
+/docgen-semantics
 /docgen-plan
 /docgen-generate
 /docgen-audit
@@ -1318,6 +1363,10 @@ Examples:
 
 ```text
 /docgen-analyze
+```
+
+```text
+/docgen-semantics
 ```
 
 ```text
@@ -1424,6 +1473,14 @@ Show stage state, generated page counts, and audit summary when available.
 docgen status
 ```
 
+## `docgen migrate`
+
+Add newly introduced default configuration keys while preserving existing project-specific values. This is useful after upgrading the global engine.
+
+```bash
+docgen migrate
+```
+
 ## `docgen validate`
 
 Validate global/project structure and generated artifacts available in the current repository.
@@ -1469,8 +1526,30 @@ docgen analyze "quote lifecycle"
 Output:
 
 ```text
-.docgen/model/**
+.docgen/model/system.json
 ```
+
+## `docgen semantics`
+
+Extract repository-specific business semantics, distinct flow models, and exhaustive interface/dependency catalogs.
+
+```bash
+docgen semantics
+```
+
+Outputs:
+
+```text
+.docgen/model/business.json
+.docgen/model/flows.json
+.docgen/model/catalogs.json
+```
+
+`business.json` contains actors, capabilities, concepts, business rules, decisions, branch conditions, lifecycles, invariants and use cases.
+
+`flows.json` separates business, control, request, traffic, data and event flows.
+
+`catalogs.json` inventories endpoints, message handlers/producers/consumers, external dependencies, data stores and scheduled jobs.
 
 ## `docgen plan`
 
@@ -1611,7 +1690,7 @@ docgen all
 Equivalent conceptually to:
 
 ```text
-discover → analyze → plan → generate all → audit all → snapshot
+discover → analyze → semantics → plan → generate all → audit all → snapshot
 ```
 
 ---
@@ -2237,22 +2316,35 @@ For a team that needs exact engine reproducibility inside the repository, use th
 
 ---
 
+
+## Automatic additive migration from v0.3.x project config
+
+When v0.4.0 runs inside a repository initialized by an older global-first release, it additively merges new defaults into `.docgen/config/documentation.json`. Existing custom scalar values and existing array entries are preserved; new page types, audiences, semantics turn-budget defaults, Mermaid-only quality settings, and knowledge-base settings are added. The project marker is updated to the current kit version.
+
+You can run the migration explicitly:
+
+```bash
+docgen migrate
+```
+
+This avoids `docgen init --force`, which could overwrite project-owned configuration.
+
 # Upgrade
 
 ## Migrating from v0.1.x project-local installs
 
-Version 0.1.x installed the complete engine inside each repository. Version 0.3.0 defaults to a global engine.
+Version 0.1.x installed the complete engine inside each repository. Version 0.4.0 defaults to a global engine.
 
 Recommended migration:
 
 ```bash
-# 1. Install v0.3.0 globally once
+# 1. Install v0.4.0 globally once
 node install.mjs --force
 
 # 2. Enter an existing v0.1.x repository
 cd /path/to/repository
 
-# 3. Add the v0.3.0 project marker/template without replacing existing config
+# 3. Add the v0.4.0 project marker/template without replacing existing config
 docgen init
 
 # 4. Verify the global runtime
@@ -2433,7 +2525,7 @@ Do not mix both modes casually in the same repository because duplicate global a
 
 ## `docgen all` appears to hang or stays quiet
 
-v0.3.0 prints a heartbeat while every Command Code child process is alive. You should see output similar to:
+v0.4.0 prints a heartbeat while every Command Code child process is alive. You should see output similar to:
 
 ```text
 [docgen] discover:. RUNNING | elapsed 1m 20s | pid 18420 | changed artifacts 7
@@ -2816,7 +2908,7 @@ For a repository that requires an exact frozen engine version, use the self-cont
 
 # Compatibility notes
 
-The v0.3.0 architecture intentionally aligns with Command Code user-level and project-level extension scopes:
+The v0.4.0 architecture intentionally aligns with Command Code user-level and project-level extension scopes:
 
 ```text
 User-level reusable components:
@@ -2943,4 +3035,98 @@ docgen snapshot
 This workflow preserves the most important principle of the system:
 
 > Documentation quality comes from evidence preservation, bounded synthesis, explicit contracts, and independent verification—not from one very large prompt.
+
+
+# Deep system knowledge-base target
+
+DocGen v0.4.0 does **not** treat the two benchmark home pages as the complete target. A Mintlify-style site is a hierarchy of categories, pages, and deep sections. DocGen therefore optimizes for **breadth × depth**:
+
+```text
+Repository
+  │
+  ├─ Orientation / Getting Started
+  ├─ Business & Domain
+  │   ├─ actors and capabilities
+  │   ├─ concepts and glossary
+  │   ├─ business rules and validations
+  │   ├─ decisions and branch conditions
+  │   └─ lifecycles and invariants
+  ├─ Architecture
+  │   ├─ system context
+  │   ├─ components/modules
+  │   ├─ dependencies
+  │   └─ deployment/runtime
+  ├─ Flows
+  │   ├─ business flows
+  │   ├─ control/execution flows
+  │   ├─ request flows
+  │   ├─ traffic flows
+  │   ├─ data flows
+  │   └─ event/message flows
+  ├─ Interfaces & Integrations
+  │   ├─ endpoint catalog
+  │   ├─ endpoint deep dives
+  │   ├─ message-handler catalog
+  │   └─ external/cloud/internal dependencies
+  ├─ Data & Persistence
+  ├─ Security & Configuration
+  ├─ Development Guides
+  ├─ Operations & Observability
+  └─ Troubleshooting / Reference
+```
+
+The planner creates only evidence-backed categories, but it is explicitly allowed to produce many focused pages. There is no fixed small page-count target. Complex repositories should produce substantially richer navigation than simple libraries.
+
+## Business and logic extraction
+
+The semantics stage writes `.docgen/model/business.json` containing actors, capabilities, concepts, business rules, decisions, branch conditions, lifecycles, invariants, use cases and unresolved unknowns. A source-level branch is promoted to a business rule only when it changes a domain outcome, eligibility, state, monetary result, permission, obligation or externally visible behavior.
+
+## Six separate flow models
+
+`.docgen/model/flows.json` keeps these views separate:
+
+| Flow | Answers |
+|---|---|
+| Business flow | What business goal, decisions and outcomes occur? |
+| Control flow | What code/components execute, branch, loop or retry? |
+| Request flow | How does an inbound request travel from entry point to response? |
+| Traffic flow | What network/protocol/trust-boundary hops occur? |
+| Data flow | Where does data originate, transform, persist and propagate? |
+| Event flow | How do producers, channels and consumers interact asynchronously? |
+
+## Exhaustive catalogs
+
+`.docgen/model/catalogs.json` contains:
+
+- `endpoints`: all evidenced HTTP/RPC endpoints;
+- `messageHandlers`: Kafka/RabbitMQ/queue/stream producers, consumers, listeners, processors, retry and DLQ handlers;
+- `externalDependencies`: internal services, third-party APIs, cloud services, identity systems, storage, databases, brokers, caches and other integrations;
+- `dataStores`;
+- `scheduledJobs`.
+
+When these arrays are non-empty, the manifest quality gate requires pages with matching coverage tags such as `endpoint-catalog`, `message-handler-catalog`, and `external-dependency-catalog`.
+
+## Mermaid-only diagrams
+
+Every generated diagram must be a fenced `mermaid` block. PlantUML, Graphviz/DOT and other diagram fences fail validation. Use focused Mermaid views rather than one unreadable mega-diagram.
+
+## Evidence-index compatibility fix
+
+The discovery contract requires:
+
+```json
+{
+  "schemaVersion": "1.0",
+  "generatedAt": "...",
+  "artifacts": []
+}
+```
+
+However, cheap models can still emit semantically equivalent shapes such as `files` or `entries`. v0.4.0 normalizes these variants after discovery. If no list exists, it scans `.docgen/evidence/**` and constructs canonical `artifacts[]` deterministically. The exact v0.3.0 failure:
+
+```text
+Error: .docgen/evidence/index.json missing required key: artifacts
+```
+
+is therefore handled by the orchestrator before validation.
 

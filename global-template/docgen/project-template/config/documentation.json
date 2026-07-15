@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "1.1",
   "projectName": "",
   "outputRoot": "docs",
   "discoveryScopes": [
@@ -55,15 +55,22 @@
   "audiences": [
     "engineer",
     "architect",
-    "operator"
+    "operator",
+    "product",
+    "business-analyst"
   ],
   "pageTypes": [
     "overview",
     "architecture",
+    "business",
     "concept",
+    "flow",
     "guide",
     "reference",
-    "operations"
+    "data",
+    "integration",
+    "operations",
+    "troubleshooting"
   ],
   "requireEvidenceReferences": true,
   "diagramFormat": "mermaid",
@@ -84,7 +91,8 @@
       "audit": 20,
       "fix": 20,
       "update-impact": 20,
-      "enrich": 20
+      "enrich": 20,
+      "semantics": 30
     }
   },
   "quality": {
@@ -98,18 +106,50 @@
       "concept": 900,
       "guide": 1000,
       "reference": 700,
-      "operations": 1000
+      "operations": 1000,
+      "business": 1000,
+      "flow": 1000,
+      "data": 1000,
+      "integration": 900,
+      "troubleshooting": 1000
     },
     "minHeadings": 4,
     "requireDeclaredSections": true,
     "requirePlannedDiagrams": true,
     "maxCriticalFindings": 0,
-    "maxHighFindings": 0
+    "maxHighFindings": 0,
+    "requireMermaidOnly": true,
+    "requireCoverageTags": true,
+    "requiredCoverageTagsWhenEvidenceExists": [
+      "business-rules",
+      "branch-conditions",
+      "request-flow",
+      "traffic-flow",
+      "data-flow",
+      "endpoint-catalog",
+      "message-handler-catalog",
+      "external-dependency-catalog"
+    ]
   },
   "progress": {
     "heartbeatSeconds": 10,
     "noOutputWarningSeconds": 45,
     "showCommandOutput": true,
     "verboseCommandCode": true
+  },
+  "knowledgeBase": {
+    "target": "deep-multi-page-system-knowledge-base",
+    "navigation": "category-and-page hierarchy",
+    "preferFocusedPagesOverCatchAll": true,
+    "exhaustiveCatalogs": true,
+    "flowTypes": [
+      "business",
+      "control",
+      "request",
+      "traffic",
+      "data",
+      "event"
+    ],
+    "diagramFormat": "mermaid-only"
   }
 }

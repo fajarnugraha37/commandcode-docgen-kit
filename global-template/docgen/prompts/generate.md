@@ -5,14 +5,23 @@ Page manifest entry:
 
 Delegate exactly this page to the `doc-writer` custom agent.
 
+This page is part of a deep multi-page system knowledge base. Treat the manifest as a content contract, not a suggestion.
+
 Quality contract:
-- treat the manifest as a content contract, not a suggestion;
-- cover every declared required section;
-- use every relevant declared evidence/model input;
-- explain purpose, mental model, boundaries, lifecycle/flow, invariants, failure behavior, operational implications, and implementation orientation when supported;
-- include Mermaid diagrams for declared diagram intents when evidence supports them;
-- prefer layered explanation: executive orientation first, then deep technical detail;
-- include practical examples, tables, state/sequence flows, caveats, and cross-links when they improve understanding;
-- never pad with generic textbook prose or invent behavior.
+- cover every required section and every coverage tag relevant to this page;
+- use all relevant declared evidence/model inputs, including business/flows/catalog models;
+- begin with orientation and purpose, then progressively deepen into implementation and operational detail;
+- explain boundaries, actors, inputs/outputs, ownership, lifecycle, invariants, rules, decisions, branch conditions and failure behavior when supported;
+- for flow pages, enumerate steps and branches before or alongside the diagram;
+- for reference pages, be exhaustive over the corresponding normalized catalog rather than sampling a few entries;
+- endpoint pages must list all catalogued endpoints in scope and explain handler/security/validation/downstream effects when known;
+- messaging pages must list all catalogued producers/consumers/listeners/processors/handlers in scope and explain channel, payload, delivery, retry/DLQ/idempotency/order behavior when known;
+- integration pages must list all catalogued external/cloud/internal dependencies in scope and explain direction, protocol, data, auth and failure behavior when known;
+- use tables for dense catalogs and decision matrices;
+- include practical examples and implementation orientation when supported;
+- include cross-links to related pages;
+- include source-grounding notes where they materially help maintainers verify behavior;
+- all diagrams MUST use fenced `mermaid`; never use PlantUML, Graphviz, ASCII-art diagrams, or image-only diagrams;
+- never pad with generic textbook prose and never invent unsupported behavior.
 
 Write exactly the manifest target path. Do not modify unrelated pages or application source. Validate Markdown structure before finishing.

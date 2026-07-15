@@ -1,14 +1,19 @@
 ---
-name: doc-mermaid
-description: Create Mermaid diagrams only when they clarify relationships, sequences, states, or data flow and keep them consistent with evidence.
+name: "doc-mermaid"
+description: "Create evidence-grounded Mermaid diagrams for architecture, business, control, request, traffic, data, event, state and dependency views."
 ---
+# Mermaid-only diagrams
 
-# Mermaid Diagram Rules
+All generated diagrams MUST use fenced `mermaid` blocks.
 
-Use Mermaid for:
+Choose diagram type by question:
 
-- `flowchart` for component/data relationships
-- `sequenceDiagram` for temporal interactions
-- `stateDiagram-v2` for explicit state transitions
+- `flowchart` for business/control/data/traffic topology;
+- `sequenceDiagram` for request/event interactions over time;
+- `stateDiagram-v2` for lifecycle/state transitions;
+- `erDiagram` for evidenced logical data relationships;
+- `classDiagram` only for useful conceptual/type relationships.
 
-Keep diagrams small enough to read. Every node and transition must be supported by the page's declared evidence/model inputs. Do not add architecture that exists only to make the diagram look complete. Ensure diagram terminology matches prose exactly.
+Do not use PlantUML, Graphviz/DOT, ASCII-art diagrams, or external image-only diagrams.
+
+Every node/edge must be grounded in evidence or explicitly marked as inference in surrounding prose. Show alternate/error branches when they materially change behavior. Keep diagrams readable; split overloaded diagrams into multiple focused views.

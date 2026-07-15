@@ -27,6 +27,9 @@ const statePath = path.join(root, '.docgen', 'state', 'state.json');
 const manifestPath = path.join(root, '.docgen', 'plan', 'manifest.json');
 const evidenceIndexPath = path.join(root, '.docgen', 'evidence', 'index.json');
 const systemPath = path.join(root, '.docgen', 'model', 'system.json');
+const businessPath = path.join(root, '.docgen', 'model', 'business.json');
+const flowsPath = path.join(root, '.docgen', 'model', 'flows.json');
+const catalogsPath = path.join(root, '.docgen', 'model', 'catalogs.json');
 const auditIndexPath = path.join(root, '.docgen', 'audit', 'index.json');
 const configPath = path.join(root, '.docgen', 'config', 'documentation.json');
 const fingerprintsPath = path.join(root, '.docgen', 'state', 'fingerprints.json');
@@ -57,6 +60,42 @@ function commandExists(command) {
 function loadConfig() {
   if (!fs.existsSync(configPath)) return {};
   return readJson(configPath);
+}
+function mergeAdditiveDefaults(current, defaults, keyPath = '') {
+  if (Array.isArray(defaults)) {
+    if (!Array.isArray(current)) return defaults;
+    const unionPaths = new Set(['audiences', 'pageTypes', 'sourceExtensions', 'exclude']);
+    if (unionPaths.has(keyPath)) return [...new Set([...current, ...defaults])];
+    return current;
+  }
+  if (defaults && typeof defaults === 'object') {
+    const out = current && typeof current === 'object' && !Array.isArray(current) ? { ...current } : {};
+    for (const [k, v] of Object.entries(defaults)) out[k] = mergeAdditiveDefaults(out[k], v, keyPath ? `${keyPath}.${k}` : k);
+    return out;
+  }
+  return current === undefined ? defaults : current;
+}
+function migrateProjectConfig(silent = false) {
+  if (!fs.existsSync(configPath)) return false;
+  const defaultsPath = path.join(engineHome, 'project-template', 'config', 'documentation.json');
+  if (!fs.existsSync(defaultsPath)) return false;
+  const current = readJson(configPath);
+  const defaults = readJson(defaultsPath);
+  const merged = mergeAdditiveDefaults(current, defaults);
+  merged.schemaVersion = defaults.schemaVersion ?? merged.schemaVersion;
+  const changed = JSON.stringify(current) !== JSON.stringify(merged);
+  if (changed) {
+    writeJson(configPath, merged);
+    if (!silent) console.log(`[docgen] migrated project configuration additively to DocGen ${kitVersion}. Existing custom values were preserved.`);
+  } else if (!silent) {
+    console.log(`[docgen] project configuration is already compatible with DocGen ${kitVersion}.`);
+  }
+  const markerPath = path.join(root, '.docgen', 'project.json');
+  if (fs.existsSync(markerPath)) {
+    const marker = readJson(markerPath);
+    if (marker.kitVersion !== kitVersion) { marker.kitVersion = kitVersion; marker.migratedAt = now(); writeJson(markerPath, marker); }
+  }
+  return changed;
 }
 function commandCodeBin() {
   if (process.env.DOCGEN_COMMAND_CODE_BIN) return process.env.DOCGEN_COMMAND_CODE_BIN;
@@ -258,6 +297,107 @@ function validateJsonFile(file, required = []) {
   for (const key of required) if (!(key in obj)) throw new Error(`${rel(file)} missing required key: ${key}`);
   return obj;
 }
+function slug(value) {
+  return String(value || 'artifact').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'artifact';
+}
+function listFilesRecursive(base) {
+  if (!fs.existsSync(base)) return [];
+  const out = []; const stack = [base];
+  while (stack.length) {
+    const dir = stack.pop();
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) stack.push(full); else out.push(full);
+    }
+  }
+  return out;
+}
+function normalizeEvidenceIndex() {
+  const evidenceDir = path.dirname(evidenceIndexPath);
+  let obj = {};
+  if (fs.existsSync(evidenceIndexPath)) {
+    try { obj = readJson(evidenceIndexPath); } catch (e) { throw new Error(`Invalid ${rel(evidenceIndexPath)}: ${e.message}`); }
+  }
+  const candidates = [obj.artifacts, obj.files, obj.evidenceFiles, obj.entries, obj.documents, obj.items].find(Array.isArray) ?? [];
+  const normalizeEntry = (item, i) => {
+    if (typeof item === 'string') {
+      const p = item.replaceAll('\\', '/');
+      return { id: slug(path.basename(p, path.extname(p))), path: p, kind: 'evidence', scope: '.' };
+    }
+    const x = item && typeof item === 'object' ? item : {};
+    let p = String(x.path ?? x.file ?? x.filePath ?? x.relativePath ?? x.artifactPath ?? '').replaceAll('\\', '/');
+    if (p && path.isAbsolute(p)) p = rel(p);
+    if (p && !p.startsWith('.docgen/') && !fs.existsSync(path.join(root, p)) && fs.existsSync(path.join(evidenceDir, p))) p = rel(path.join(evidenceDir, p));
+    return {
+      ...x,
+      id: String(x.id ?? x.name ?? x.key ?? slug(p || `artifact-${i + 1}`)),
+      path: p,
+      kind: String(x.kind ?? x.type ?? x.category ?? 'evidence'),
+      scope: String(x.scope ?? x.module ?? x.area ?? x.boundedContext ?? '.')
+    };
+  };
+  let artifacts = candidates.map(normalizeEntry).filter((x) => x.path);
+  if (!artifacts.length) {
+    artifacts = listFilesRecursive(evidenceDir)
+      .filter((p) => p !== evidenceIndexPath && !p.endsWith('.gitkeep'))
+      .map((p, i) => normalizeEntry(rel(p), i));
+  }
+  const seen = new Set();
+  artifacts = artifacts.filter((a) => { const key = a.path; if (!key || seen.has(key)) return false; seen.add(key); return true; });
+  const canonical = {
+    ...obj,
+    schemaVersion: '1.0',
+    generatedAt: obj.generatedAt ?? now(),
+    repository: obj.repository ?? {},
+    artifacts
+  };
+  const changed = !Array.isArray(obj.artifacts) || JSON.stringify(obj.artifacts) !== JSON.stringify(artifacts);
+  writeJson(evidenceIndexPath, canonical);
+  if (changed) console.log(`[docgen] normalized evidence index to canonical artifacts[] (${artifacts.length} artifacts).`);
+  if (!artifacts.length) throw new Error(`${rel(evidenceIndexPath)} contains no artifacts and no evidence files were found.`);
+  return canonical;
+}
+function validateMermaidOnly(text, pagePath) {
+  const forbidden = [...text.matchAll(/```\s*(plantuml|puml|dot|graphviz)\b/gi)].map((m) => m[1]);
+  if (forbidden.length) throw new Error(`${pagePath} contains non-Mermaid diagram fences: ${[...new Set(forbidden)].join(', ')}`);
+}
+function loadOptionalJson(file, fallback) { return fs.existsSync(file) ? readJson(file) : fallback; }
+function manifestCoverageGaps(manifest) {
+  const tags = new Set((manifest.pages ?? []).flatMap((p) => p.coverageTags ?? []));
+  const business = loadOptionalJson(businessPath, { businessRules: [], branchConditions: [], lifecycles: [], capabilities: [] });
+  const flows = loadOptionalJson(flowsPath, { businessFlows: [], controlFlows: [], requestFlows: [], trafficFlows: [], dataFlows: [], eventFlows: [] });
+  const catalogs = loadOptionalJson(catalogsPath, { endpoints: [], messageHandlers: [], externalDependencies: [] });
+  const required = [['system-overview', true], ['architecture', true]];
+  if ((business.capabilities ?? []).length) required.push(['business-domain', true]);
+  if ((business.businessRules ?? []).length) required.push(['business-rules', true]);
+  if ((business.branchConditions ?? []).length) required.push(['branch-conditions', true]);
+  if ((business.lifecycles ?? []).length) required.push(['state-lifecycle', true]);
+  for (const [key, tag] of [['businessFlows','business-flow'],['controlFlows','control-flow'],['requestFlows','request-flow'],['trafficFlows','traffic-flow'],['dataFlows','data-flow'],['eventFlows','event-flow']]) if ((flows[key] ?? []).length) required.push([tag, true]);
+  if ((catalogs.endpoints ?? []).length) required.push(['endpoint-catalog', true]);
+  if ((catalogs.messageHandlers ?? []).length) required.push(['message-handler-catalog', true]);
+  if ((catalogs.externalDependencies ?? []).length) required.push(['external-dependency-catalog', true]);
+  return required.filter(([tag]) => !tags.has(tag)).map(([tag]) => tag);
+}
+function writeNavigationSummary(manifest) {
+  const lines = ['# Documentation Map', '', 'Generated from `.docgen/plan/manifest.json`.', ''];
+  const byId = new Map((manifest.pages ?? []).map((p) => [p.id, p]));
+  const navigation = Array.isArray(manifest.navigation) && manifest.navigation.length ? manifest.navigation : [];
+  const groups = navigation.length ? navigation : Object.entries(Object.groupBy ? Object.groupBy(manifest.pages ?? [], (p) => p.category ?? 'Documentation') : (manifest.pages ?? []).reduce((a,p)=>{(a[p.category??'Documentation']??=[]).push(p);return a;},{})).map(([title,pages])=>({id:slug(title),title,pages:pages.map(p=>p.id)}));
+  for (const group of groups) {
+    lines.push(`## ${group.title}`, '');
+    if (group.description) lines.push(group.description, '');
+    for (const id of group.pages ?? []) {
+      const p = byId.get(typeof id === 'string' ? id : id.id);
+      if (!p) continue;
+      const target = path.relative(path.join(root, 'docs'), path.join(root, p.path)).replaceAll('\\', '/').replace(/\.md$/, '');
+      lines.push(`- [${p.title}](${target}.md) — ${p.summary ?? p.purpose ?? ''}`);
+    }
+    lines.push('');
+  }
+  fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'docs', 'SUMMARY.md'), lines.join('\n').trimEnd() + '\n');
+}
+
 function validatePageFile(page) {
   const file = path.join(root, page.path);
   if (!fs.existsSync(file)) throw new Error(`Missing generated page: ${page.path}`);
@@ -265,6 +405,7 @@ function validatePageFile(page) {
   if (!/^#\s+\S/m.test(text)) throw new Error(`${page.path} has no H1 heading`);
   if ((text.match(/```/g) ?? []).length % 2 !== 0) throw new Error(`${page.path} has an unclosed fenced code block`);
   if (/[A-Za-z]:\\Users\\|\/home\/[^/]+\//.test(text)) throw new Error(`${page.path} appears to contain an absolute local user path`);
+  if (qualityConfig().requireMermaidOnly !== false) validateMermaidOnly(text, page.path);
 }
 
 function validateSkills(errors) {
@@ -290,12 +431,12 @@ function validateStatic() {
     try { validateJsonFile(f); } catch (e) { errors.push(e.message); }
   }
   validateSkills(errors);
-  const requiredAgents = ['doc-discoverer', 'doc-architect', 'doc-planner', 'doc-writer', 'doc-auditor'];
+  const requiredAgents = ['doc-discoverer', 'doc-architect', 'doc-domain-analyst', 'doc-planner', 'doc-writer', 'doc-auditor'];
   for (const a of requiredAgents) if (!fs.existsSync(path.join(commandCodeHome, 'agents', `${a}.md`))) errors.push(`Missing global agent: ${a}`);
-  const requiredCommands = ['docgen-init', 'docgen-doctor', 'docgen-discover', 'docgen-analyze', 'docgen-plan', 'docgen-generate', 'docgen-audit', 'docgen-fix', 'docgen-update', 'docgen-status', 'docgen-enrich', 'docgen-quality'];
+  const requiredCommands = ['docgen-init', 'docgen-doctor', 'docgen-discover', 'docgen-analyze', 'docgen-plan', 'docgen-generate', 'docgen-audit', 'docgen-fix', 'docgen-update', 'docgen-status', 'docgen-enrich', 'docgen-quality', 'docgen-semantics'];
   for (const c of requiredCommands) if (!fs.existsSync(path.join(commandCodeHome, 'commands', `${c}.md`))) errors.push(`Missing global command: ${c}`);
-  for (const prompt of ['discover.md', 'analyze.md', 'plan.md', 'generate.md', 'enrich.md', 'audit.md', 'fix.md', 'update-impact.md']) if (!fs.existsSync(assetFile('prompts', prompt))) errors.push(`Missing prompt: ${prompt}`);
-  for (const schema of ['evidence-artifact.schema.json', 'evidence-index.schema.json', 'component.schema.json', 'workflow.schema.json', 'system.schema.json', 'manifest.schema.json', 'audit-page.schema.json', 'audit-index.schema.json', 'update-plan.schema.json']) {
+  for (const prompt of ['discover.md', 'analyze.md', 'semantics.md', 'plan.md', 'generate.md', 'enrich.md', 'audit.md', 'fix.md', 'update-impact.md']) if (!fs.existsSync(assetFile('prompts', prompt))) errors.push(`Missing prompt: ${prompt}`);
+  for (const schema of ['evidence-artifact.schema.json', 'evidence-index.schema.json', 'component.schema.json', 'workflow.schema.json', 'system.schema.json', 'business.schema.json', 'flows.schema.json', 'catalogs.schema.json', 'manifest.schema.json', 'audit-page.schema.json', 'audit-index.schema.json', 'update-plan.schema.json']) {
     try { validateJsonFile(assetFile('schemas', schema)); } catch (e) { errors.push(e.message); }
   }
   if (errors.length) {
@@ -310,10 +451,15 @@ function validateGenerated() {
   const errors = [];
   try { if (fs.existsSync(evidenceIndexPath)) validateJsonFile(evidenceIndexPath, ['schemaVersion', 'artifacts']); } catch (e) { errors.push(e.message); }
   try { if (fs.existsSync(systemPath)) validateJsonFile(systemPath, ['schemaVersion', 'components', 'relationships', 'workflows', 'unknowns']); } catch (e) { errors.push(e.message); }
+  try { if (fs.existsSync(businessPath)) validateJsonFile(businessPath, ['schemaVersion', 'actors', 'capabilities', 'concepts', 'businessRules', 'decisions', 'branchConditions', 'lifecycles', 'invariants', 'useCases', 'unknowns']); } catch (e) { errors.push(e.message); }
+  try { if (fs.existsSync(flowsPath)) validateJsonFile(flowsPath, ['schemaVersion', 'businessFlows', 'controlFlows', 'requestFlows', 'trafficFlows', 'dataFlows', 'eventFlows']); } catch (e) { errors.push(e.message); }
+  try { if (fs.existsSync(catalogsPath)) validateJsonFile(catalogsPath, ['schemaVersion', 'endpoints', 'messageHandlers', 'externalDependencies', 'dataStores', 'scheduledJobs']); } catch (e) { errors.push(e.message); }
   if (fs.existsSync(manifestPath)) {
     try {
-      const manifest = validateJsonFile(manifestPath, ['schemaVersion', 'pages']);
+      const manifest = validateJsonFile(manifestPath, ['schemaVersion', 'navigation', 'pages']);
       const ids = new Set(); const paths = new Set();
+      const coverageGaps = manifestCoverageGaps(manifest);
+      if (coverageGaps.length) errors.push(`Manifest coverage gaps: ${coverageGaps.join(', ')}`);
       for (const page of manifest.pages) {
         if (!page.id || !page.path) errors.push('Manifest page missing id/path');
         if (ids.has(page.id)) errors.push(`Duplicate page id: ${page.id}`); ids.add(page.id);
@@ -335,8 +481,8 @@ function validateGenerated() {
 async function doDiscover(scope = '.', progressLabel = '') {
   updateStage('discover', 'running', { scope });
   await runCommandCode('discover', renderPrompt('discover.md', { SCOPE: scope }), scope, progressLabel);
-  validateJsonFile(evidenceIndexPath, ['schemaVersion', 'artifacts']);
-  updateStage('discover', 'completed', { scope });
+  const evidenceIndex = normalizeEvidenceIndex();
+  updateStage('discover', 'completed', { scope, artifactCount: evidenceIndex.artifacts.length });
 }
 async function doAnalyze(scope = 'all current evidence', progressLabel = '') {
   if (!fs.existsSync(evidenceIndexPath)) fail('Run discover first.');
@@ -345,12 +491,34 @@ async function doAnalyze(scope = 'all current evidence', progressLabel = '') {
   validateJsonFile(systemPath, ['schemaVersion', 'components', 'relationships', 'workflows', 'unknowns']);
   updateStage('analyze', 'completed', { scope });
 }
+async function doSemantics(progressLabel = '') {
+  if (!fs.existsSync(systemPath)) fail('Run analyze first.');
+  updateStage('semantics', 'running');
+  await runCommandCode('semantics', renderPrompt('semantics.md'), '', progressLabel);
+  validateJsonFile(businessPath, ['schemaVersion', 'actors', 'capabilities', 'concepts', 'businessRules', 'decisions', 'branchConditions', 'lifecycles', 'invariants', 'useCases', 'unknowns']);
+  validateJsonFile(flowsPath, ['schemaVersion', 'businessFlows', 'controlFlows', 'requestFlows', 'trafficFlows', 'dataFlows', 'eventFlows']);
+  validateJsonFile(catalogsPath, ['schemaVersion', 'endpoints', 'messageHandlers', 'externalDependencies', 'dataStores', 'scheduledJobs']);
+  updateStage('semantics', 'completed', {
+    endpoints: readJson(catalogsPath).endpoints.length,
+    messageHandlers: readJson(catalogsPath).messageHandlers.length,
+    externalDependencies: readJson(catalogsPath).externalDependencies.length
+  });
+}
 async function doPlan(progressLabel = '') {
   if (!fs.existsSync(systemPath)) fail('Run analyze first.');
   updateStage('plan', 'running');
-  await runCommandCode('plan', renderPrompt('plan.md'), '', progressLabel);
-  const manifest = validateJsonFile(manifestPath, ['schemaVersion', 'pages']);
-  updateStage('plan', 'completed', { pageCount: manifest.pages.length });
+  await runCommandCode('plan', renderPrompt('plan.md', { MISSING_COVERAGE: '' }), '', progressLabel);
+  let manifest = validateJsonFile(manifestPath, ['schemaVersion', 'navigation', 'pages']);
+  let gaps = manifestCoverageGaps(manifest);
+  if (gaps.length && isComprehensive()) {
+    console.log(`[docgen] manifest coverage gaps detected: ${gaps.join(', ')}. Running one bounded coverage-repair planning pass.`);
+    await runCommandCode('plan', renderPrompt('plan.md', { MISSING_COVERAGE: `The current manifest is missing these required evidence-backed coverage tags: ${gaps.join(', ')}. Reconcile the manifest so each is owned by an appropriate page; do not add unsupported content.` }), 'coverage-repair', progressLabel);
+    manifest = validateJsonFile(manifestPath, ['schemaVersion', 'navigation', 'pages']);
+    gaps = manifestCoverageGaps(manifest);
+  }
+  if (gaps.length) throw new Error(`Manifest coverage gaps remain: ${gaps.join(', ')}`);
+  writeNavigationSummary(manifest);
+  updateStage('plan', 'completed', { pageCount: manifest.pages.length, navigationGroups: manifest.navigation.length });
 }
 async function doGenerate(id, progressLabel = '', allowEnrich = true) {
   const page = findPage(id);
@@ -529,6 +697,7 @@ async function doUpdate(explicitPaths) {
   const scopes = plan.affectedEvidenceScopes?.length ? plan.affectedEvidenceScopes : changed;
   for (const scope of scopes) await doDiscover(scope);
   await doAnalyze(`incremental changes: ${changed.join(', ')}`);
+  await doSemantics();
   await doPlan();
   for (const id of plan.affectedPageIds ?? []) {
     const currentManifest = loadManifest();
@@ -541,7 +710,7 @@ async function doUpdate(explicitPaths) {
 function status() {
   const state = loadState();
   console.log(`DocGen Kit ${kitVersion}`);
-  for (const stage of ['discover', 'analyze', 'plan', 'generate', 'audit']) console.log(`${stage.padEnd(10)} ${state.stages?.[stage]?.status ?? 'pending'}`);
+  for (const stage of ['discover', 'analyze', 'semantics', 'plan', 'generate', 'audit']) console.log(`${stage.padEnd(10)} ${state.stages?.[stage]?.status ?? 'pending'}`);
   if (fs.existsSync(manifestPath)) {
     const m = readJson(manifestPath); const generated = (m.pages ?? []).filter((p) => fs.existsSync(path.join(root, p.path))).length;
     console.log(`pages      ${generated}/${m.pages?.length ?? 0} generated`);
@@ -620,7 +789,7 @@ function compatibilityReport() {
   if (!authenticated) report.warnings.push('Command Code is not authenticated or status could not confirm authentication. Run `cmd login` before generation.');
 
   report.effectiveHeadlessArgs = Object.fromEntries(
-    ['discover', 'analyze', 'plan', 'generate', 'enrich', 'audit', 'fix', 'update-impact'].map((stage) => [stage, commandCodeArgs(stage)])
+    ['discover', 'analyze', 'semantics', 'plan', 'generate', 'enrich', 'audit', 'fix', 'update-impact'].map((stage) => [stage, commandCodeArgs(stage)])
   );
   writeJson(path.join(root, '.docgen', 'state', 'compatibility.json'), report);
   return report;
@@ -702,6 +871,7 @@ function ensureInitialized() {
   const found = findProjectRoot(process.cwd());
   if (!found) fail('This repository is not initialized for DocGen. Run `docgen init` from the repository root.', 2);
   setRoot(found);
+  migrateProjectConfig(true);
 }
 function usage() {
   console.log(`Command Code DocGen Kit ${kitVersion}
@@ -714,9 +884,11 @@ Global-first usage:
 
 Project commands:
   docgen status
+  docgen migrate                add new defaults without overwriting custom config
   docgen validate
   docgen discover [scope]
   docgen analyze [scope]
+  docgen semantics              extract business/flow/catalog models
   docgen plan
   docgen generate <id|--all>    generate pages; comprehensive profile auto-enriches
   docgen enrich <id|--all>      run explicit depth/completeness pass
@@ -752,9 +924,11 @@ switch (command) {
   case 'doctor': doctor(); break;
   case 'compat': doctor(); break;
   case 'status': status(); break;
+  case 'migrate': migrateProjectConfig(false); break;
   case 'validate': if (!validateStatic() || !validateGenerated()) process.exit(1); break;
   case 'discover': await doDiscover(args.join(' ') || '.'); break;
   case 'analyze': await doAnalyze(args.join(' ') || 'all current evidence'); break;
+  case 'semantics': await doSemantics(); break;
   case 'plan': await doPlan(); break;
   case 'generate': if (args[0] === '--all') await doGenerateAll(); else if (args[0]) await doGenerate(args[0]); else fail('generate requires <page-id|--all>'); break;
   case 'enrich': if (args[0] === '--all') await doEnrichAll(); else if (args[0]) await doEnrich(args[0]); else fail('enrich requires <page-id|--all>'); break;
@@ -766,14 +940,15 @@ switch (command) {
   case 'update': await doUpdate(args); break;
   case 'all': {
     console.log(`DocGen full pipeline | quality profile: ${qualityProfile()}`);
-    printItemProgress('phase', 1, 6, 'discovery'); await doDiscover('.', 'phase 1/6');
-    printItemProgress('phase', 2, 6, 'architecture analysis'); await doAnalyze('all current evidence', 'phase 2/6');
-    printItemProgress('phase', 3, 6, 'documentation planning'); await doPlan('phase 3/6');
-    const manifest = loadManifest(); console.log(`Plan contains ${manifest.pages.length} pages.`);
-    printItemProgress('phase', 4, 6, 'page generation + enrichment'); await doGenerateAll();
-    printItemProgress('phase', 5, 6, 'independent audit'); await doAuditAll();
+    printItemProgress('phase', 1, 7, 'evidence discovery'); await doDiscover('.', 'phase 1/7');
+    printItemProgress('phase', 2, 7, 'technical architecture analysis'); await doAnalyze('all current evidence', 'phase 2/7');
+    printItemProgress('phase', 3, 7, 'business, flow, and catalog semantics'); await doSemantics('phase 3/7');
+    printItemProgress('phase', 4, 7, 'multi-page documentation planning'); await doPlan('phase 4/7');
+    const manifest = loadManifest(); console.log(`Plan contains ${manifest.pages.length} pages across ${manifest.navigation?.length ?? 0} navigation categories.`);
+    printItemProgress('phase', 5, 7, 'page generation + enrichment'); await doGenerateAll();
+    printItemProgress('phase', 6, 7, 'independent audit'); await doAuditAll();
     if (isComprehensive() && qualityConfig().autoFix !== false) {
-      console.log('Phase 5b/6 — automatic repair of audit findings');
+      console.log('Phase 6b/7 — automatic repair of audit findings');
       const fixed = await doFixAll();
       if (fixed.length && qualityConfig().reAuditAfterFix !== false) {
         console.log(`Re-auditing ${fixed.length} repaired page(s)...`);
@@ -781,7 +956,7 @@ switch (command) {
         rebuildAuditIndex();
       }
     }
-    printItemProgress('phase', 6, 6, 'quality summary + source snapshot');
+    printItemProgress('phase', 7, 7, 'quality summary + source snapshot');
     writeQualitySummary(); doSnapshot(); doQuality();
     break;
   }

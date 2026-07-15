@@ -1,14 +1,46 @@
 You are running the DocGen documentation planning stage.
 
-Delegate to the `doc-planner` custom agent. Read `.docgen/evidence/index.json`, `.docgen/model/system.json`, documentation config/style/glossary, and the existing manifest when present. Produce or reconcile `.docgen/plan/manifest.json` conforming to the manifest schema.
+Delegate to the `doc-planner` custom agent. Read:
 
-The manifest must be coverage-driven and reader-oriented. It must provide a coherent documentation set comparable to a curated developer portal, not a source-file inventory. Cover, when evidence supports them:
-- system/repository overview and architecture at a glance;
-- module/component boundaries and dependency relationships;
-- core domain concepts and terminology;
-- important end-to-end request/event/workflow lifecycles;
-- API, messaging, persistence, configuration, security, and integration reference surfaces;
+- `.docgen/evidence/index.json` and relevant evidence artifacts;
+- `.docgen/model/system.json`;
+- `.docgen/model/business.json` when present;
+- `.docgen/model/flows.json` when present;
+- `.docgen/model/catalogs.json` when present;
+- documentation config, style guide and glossary;
+- the existing manifest when present.
+
+Produce or reconcile `.docgen/plan/manifest.json` conforming to the manifest schema.
+
+The target is a deep multi-page system knowledge base with the breadth and navigation density of a curated Mintlify-style documentation site. Do not optimize for a small page count. Split major concepts into focused pages when that improves discoverability or depth. Do not create one giant catch-all page.
+
+Build a navigation taxonomy with categories and pages appropriate to the repository. Cover every evidence-backed surface that matters, including when present:
+
+- orientation, quickstart, repository map and architecture at a glance;
+- business/domain overview, actors, capabilities, glossary and conceptual model;
+- business logic, rules, validations, decisions and branch conditions;
+- lifecycle/state-machine documentation;
+- business flows and use cases;
+- control/execution flows;
+- inbound request flows;
+- traffic/network/trust-boundary flows;
+- data models, ownership, transformations, persistence and data flows;
+- event/message flows;
+- complete endpoint catalog and deeper API behavior pages;
+- complete Kafka/RabbitMQ/queue/stream handler catalog;
+- external services, cloud services, internal service dependencies and integrations;
+- module/component deep dives;
+- persistence, configuration, security and observability;
 - local development and common engineering tasks;
-- operations, failure modes, observability, and troubleshooting.
+- deployment/runtime architecture;
+- operations, failure modes, recovery and troubleshooting;
+- reference pages where exhaustive lists are useful.
 
-For every page define audience, purpose, evidence/models, required sections, diagram intents, related pages, and optional quality hints. Avoid duplicate ownership of the same concept. Preserve stable page ids/paths where reasonable.
+Every page must define category, purpose, summary, audience, evidence/models, required sections, Mermaid diagram intents, coverageTags, related pages, and optional required tables/quality hints.
+
+Required coverage tags are conditional on evidence. Examples:
+`system-overview`, `architecture`, `business-domain`, `business-rules`, `branch-conditions`, `state-lifecycle`, `business-flow`, `control-flow`, `request-flow`, `traffic-flow`, `data-model`, `data-flow`, `event-flow`, `endpoint-catalog`, `message-handler-catalog`, `external-dependency-catalog`, `persistence`, `security`, `configuration`, `operations`, `troubleshooting`.
+
+{{MISSING_COVERAGE}}
+
+Avoid duplicate ownership of the same concept. Preserve stable page ids/paths where reasonable. All planned diagrams must be Mermaid.

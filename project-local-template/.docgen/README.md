@@ -41,3 +41,14 @@ state/compatibility.json
 ```
 
 Do not treat generated documentation as more authoritative than source evidence. The pipeline intentionally preserves FACT / INFERENCE / UNKNOWN boundaries.
+
+
+## v0.4 knowledge models
+
+In addition to technical architecture, DocGen generates repository-local normalized models for business semantics, distinct flow types, and exhaustive interface/dependency catalogs:
+
+- `model/business.json`
+- `model/flows.json`
+- `model/catalogs.json`
+
+Published diagrams are Mermaid-only.

@@ -1,37 +1,22 @@
 ---
-name: doc-page-planning
-description: Design a curated, coverage-driven documentation information architecture and stable page manifest from system models and audience needs.
+name: "doc-page-planning"
+description: "Design a coverage-driven multi-page documentation information architecture, navigation taxonomy, page contracts, and traceability from system evidence."
 ---
+# Documentation planning
 
-# Documentation Planning Procedure
+Plan for **breadth × depth**.
 
-Plan around reader questions, system concepts, and operational tasks—not source files.
+A good plan:
 
-## Coverage model
+- creates a navigable category hierarchy;
+- provides an orientation path for newcomers;
+- gives core domain/business concepts their own pages;
+- separates major flow types instead of conflating them;
+- provides exhaustive reference catalogs for APIs, messages and integrations when present;
+- gives complex components and lifecycles focused deep dives;
+- includes operational and troubleshooting knowledge;
+- avoids both one-file-per-class noise and giant catch-all pages.
 
-For every repository, inspect whether evidence supports documentation for:
+For each page define a bounded purpose, audience, evidence/model inputs, required sections, Mermaid diagram intents, coverage tags, cross-links and optional required tables.
 
-1. overview and architecture at a glance;
-2. component/module boundaries and ownership;
-3. core domain concepts and terminology;
-4. important end-to-end request, event, workflow, and state lifecycles;
-5. HTTP/API, messaging, persistence, configuration, security, and external integration surfaces;
-6. local development and common engineering tasks;
-7. operations, observability, failure modes, recovery, and troubleshooting.
-
-Do not force a page for a category with no evidence. Do not omit a material surface simply because it is complex.
-
-## Page contract
-
-For every page define:
-
-- stable `id` and target `path`;
-- type and audience;
-- explicit purpose and reader question;
-- declared evidence and normalized model inputs;
-- required sections;
-- diagram intents;
-- related pages;
-- quality hints when the page needs unusual depth.
-
-Prefer one conceptual owner for each topic and links between pages over duplicated prose. Preserve stable ids and paths during reconciliation unless the architecture genuinely changed.
+Conditional coverage must follow evidence. Do not create empty technology sections merely to satisfy a fixed template.

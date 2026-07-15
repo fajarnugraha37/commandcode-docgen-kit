@@ -1,16 +1,24 @@
-You are running a bounded independent DocGen audit.
+You are running an independent DocGen page audit.
 
 Page manifest entry:
 {{PAGE_JSON}}
 
-Delegate exactly this page to the `doc-auditor` custom agent. Audit the generated page against its declared evidence/model inputs and write `.docgen/audit/pages/{{PAGE_ID}}.json` conforming to the audit-page schema. Do not fix the page during this run.
+Delegate to the `doc-auditor` custom agent. Audit the generated page against its declared evidence/models and normalized business/flows/catalog models.
 
-Audit both correctness and documentation quality:
-- unsupported or contradicted claims;
-- missing required sections or declared diagram intents;
-- shallow treatment of important supported behavior;
-- missing failure paths, invariants, boundaries, or lifecycle detail;
-- terminology and navigation inconsistencies;
-- duplicate or misplaced concept ownership;
-- Mermaid/text mismatches;
-- generic filler that is not repository-specific.
+Check:
+- unsupported or incorrect claims;
+- FACT/INFERENCE confusion;
+- missing required sections or coverage tags;
+- omitted evidenced business rules, decisions or branch conditions;
+- omitted lifecycle/state transitions;
+- incomplete business/control/request/traffic/data/event flow steps;
+- incomplete endpoint catalog coverage;
+- incomplete message producer/consumer/listener/handler coverage;
+- incomplete external/cloud/internal dependency coverage;
+- missing failure/retry/DLQ/idempotency/order implications when evidenced;
+- contradictions with source-grounded models;
+- broken cross-links;
+- non-Mermaid diagrams or missing planned Mermaid diagrams;
+- shallow generic prose that avoids repository-specific detail.
+
+Write/update only the audit artifact for this page. Never modify application source.

@@ -78,7 +78,7 @@ function installProjectLocal(target){
   const backupRoot=path.join(abs,'.docgen','install-backup',timestamp); const installed=[]; const skipped=[];
   function localCopy(src,dest){const data=fs.readFileSync(src);const rel=path.relative(abs,dest).replaceAll('\\','/');if(fs.existsSync(dest)){if(sha256(fs.readFileSync(dest))===sha256(data)){installed.push({path:rel,action:'unchanged'});return}if(!force){skipped.push({path:rel,reason:'conflict; use --force'});return}if(!dryRun){const b=path.join(backupRoot,rel);fs.mkdirSync(path.dirname(b),{recursive:true});fs.copyFileSync(dest,b)}}console.log(`${dryRun?'[dry-run] ':''}copy ${rel}`);if(!dryRun){fs.mkdirSync(path.dirname(dest),{recursive:true});fs.writeFileSync(dest,data)}installed.push({path:rel,action:'copied'})}
   for(const src of walk(template)){const rel=path.relative(template,src);if(rel==='AGENTS.md'||rel==='.commandcode/settings.json')continue;localCopy(src,path.join(abs,rel))}
-  // Install the same v0.3 engine used by global mode under the project's .commandcode scope.
+  // Install the same v0.4 engine used by global mode under the project's .commandcode scope.
   const localEngineTemplate=path.join(here,'global-template','docgen');
   for(const src of walk(localEngineTemplate)){const rel=path.relative(localEngineTemplate,src);localCopy(src,path.join(abs,'.commandcode','docgen',rel))}
   if(!dryRun){

@@ -1,26 +1,43 @@
 ---
-name: doc-evidence-contract
-description: Define evidence classifications, traceability, and machine-readable source grounding for all DocGen stages.
+name: "doc-evidence-contract"
+description: "Define canonical evidence rules and resilient evidence-index conventions for source-grounded documentation generation."
 ---
+# Evidence contract
 
-# Evidence Contract
+Source code, executable configuration, API/message contracts, schemas, migrations and deployment/runtime definitions are primary evidence.
 
-Use this contract whenever extracting facts, synthesizing models, writing documentation, or auditing claims.
+Every non-obvious fact should carry:
 
-## Classifications
+- stable fact id where practical;
+- kind/category;
+- statement or structured data;
+- source path;
+- symbol or location when available;
+- classification: FACT / INFERENCE / UNKNOWN;
+- confidence for inference when useful.
 
-- `FACT`: directly observable in authoritative repository artifacts.
-- `INFERENCE`: a reasoned conclusion supported by one or more facts. Record supporting evidence ids.
-- `UNKNOWN`: evidence is insufficient or contradictory. Do not convert it into a confident statement.
+## Canonical evidence index
 
-## Required Traceability
+`.docgen/evidence/index.json` MUST be a JSON object containing at least:
 
-Important facts must identify a source path and, when available, a symbol and line range. Generated evidence ids must be stable enough to be referenced by model artifacts.
+```json
+{
+  "schemaVersion": "1.0",
+  "generatedAt": "<ISO-8601>",
+  "repository": {},
+  "artifacts": [
+    {
+      "id": "rest-api",
+      "path": ".docgen/evidence/rest-api.json",
+      "kind": "api",
+      "scope": "."
+    }
+  ]
+}
+```
 
-## Prohibited Behavior
+The top-level key is exactly `artifacts`. Do not substitute `files`, `entries`, or `documents`.
 
-Never infer business intent solely from names. Never claim runtime guarantees from configuration defaults unless the deployed configuration is known. Never treat existing documentation as stronger evidence than executable source or contracts.
+Artifact files may organize facts by repository structure, technology, bounded context, or concern. Prefer bounded cohesive evidence files over one giant file.
 
-## Output Discipline
-
-Use the JSON schemas under `.docgen/schemas/**`. Keep evidence atomic enough that later model and audit stages can cite a precise fact rather than a large prose summary.
+Never silently convert UNKNOWN into FACT. Existing prose is secondary evidence and must not override contradictory source evidence.

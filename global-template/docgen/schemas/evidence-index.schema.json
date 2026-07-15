@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "docgen:evidence-index:1.0",
+  "$id": "docgen:evidence-index:1.1",
   "type": "object",
   "required": [
     "schemaVersion",
@@ -29,5 +29,6 @@
         ]
       }
     }
-  }
+  },
+  "description": "Canonical evidence index. The orchestrator can normalize legacy/model-variant index shapes into artifacts[]."
 }

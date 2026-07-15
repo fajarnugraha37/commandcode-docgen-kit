@@ -38,3 +38,8 @@ Guides are task-oriented; reference pages are lookup-oriented. Do not force this
 ## Source References
 
 When useful, cite repository paths using inline code, for example `src/main/java/.../QuoteResource.java`. Avoid noisy line-by-line citations in conceptual prose; preserve precise evidence in `.docgen/evidence/**` and use source references where they help verification or navigation.
+
+
+## Diagram policy
+
+All diagrams must be Mermaid fenced blocks. Do not emit PlantUML, Graphviz/DOT, ASCII-art architecture diagrams, or external image-only diagrams. Use separate diagrams for business flow, control flow, request flow, traffic flow, data flow, event flow, and lifecycle when combining them would reduce clarity.
