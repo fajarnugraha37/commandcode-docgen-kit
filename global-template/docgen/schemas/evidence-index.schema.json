@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docgen:evidence-index:1.0",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "artifacts"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "generatedAt": {
+      "type": "string"
+    },
+    "repository": {
+      "type": "object"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "kind",
+          "scope"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1.0",
+  "runId": "2026-07-15T18-53-00-972Z-discover",
+  "stage": "discover",
+  "target": ".",
+  "startedAt": "2026-07-15T18:53:00.972Z",
+  "commandCodeBin": "cmdc",
+  "commandCodeArgs": [
+    "-p",
+    "--trust",
+    "--skip-onboarding",
+    "--yolo",
+    "--max-turns",
+    "30"
+  ],
+  "status": "completed",
+  "finishedAt": "2026-07-15T18:58:31.514Z",
+  "exitCode": 0
+}

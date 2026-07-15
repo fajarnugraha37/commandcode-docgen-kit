@@ -1,0 +1,1 @@
+Run the globally installed DocGen orchestrator command `docgen discover` for scope `$ARGUMENTS` (use `.` when empty). The orchestrator owns bounded headless execution, safety mode, state updates, and validation. Report completion or the exact failure.

@@ -1,0 +1,53 @@
+<!-- COMMANDCODE-DOCGEN:START -->
+# Documentation Engineering System
+
+This repository contains an evidence-grounded documentation workflow under `.docgen/**` with published Markdown under `docs/**`.
+
+## Authority Order
+
+When documentation claims conflict, use this authority order:
+
+1. application source code and executable behavior
+2. configuration, contracts, schemas, migrations, and deployment manifests
+3. generated evidence artifacts in `.docgen/evidence/**`
+4. normalized models in `.docgen/model/**`
+5. existing documentation
+
+Existing prose is never authoritative over contradictory source evidence.
+
+## Epistemic Rules
+
+Important technical statements must be treated as one of:
+
+- `FACT`: directly supported by source evidence
+- `INFERENCE`: derived from multiple facts; the supporting evidence must be recorded
+- `UNKNOWN`: insufficient evidence; do not invent a conclusion
+
+Never invent endpoints, business rules, state transitions, integrations, data ownership, security behavior, retry behavior, failure semantics, or operational guarantees.
+
+## Documentation Workflow
+
+Use this order:
+
+```text
+discover -> analyze -> plan -> generate -> audit -> fix as needed
+```
+
+Do not skip directly from source code to broad user-facing documentation for non-trivial systems.
+
+## Artifact Boundaries
+
+- evidence: `.docgen/evidence/**`
+- architecture/workflow model: `.docgen/model/**`
+- documentation plan: `.docgen/plan/**`
+- audit findings: `.docgen/audit/**`
+- generated documentation: `docs/**`
+
+DocGen workflows must not modify application source, build files, migrations, infrastructure, or tests.
+
+## Writing Standard
+
+Write for engineers who do not yet know the codebase. Prefer purpose, mental model, responsibilities, boundaries, interactions, workflows, state transitions, failure behavior, and actionable guides. Avoid file-by-file or class-by-class narration.
+
+Use standard Markdown and Mermaid. Keep claims precise and traceable to evidence. Mark genuine uncertainty instead of smoothing it over.
+<!-- COMMANDCODE-DOCGEN:END -->

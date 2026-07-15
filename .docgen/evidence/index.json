@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0",
+  "generatedAt": "2026-07-15T18:53:00.972Z",
+  "repository": {
+    "name": "commandcode-docgen-kit",
+    "version": "0.2.0",
+    "defaultInstallationScope": "global",
+    "scope": "."
+  },
+  "artifacts": [
+    { "id": "repository", "path": ".docgen/evidence/repository.json", "kind": "repository", "scope": "." },
+    { "id": "distribution", "path": ".docgen/evidence/distribution.json", "kind": "distribution", "scope": "install.mjs; install.sh; install.ps1; uninstall.mjs; PACKAGE-MANIFEST.json; VERSION" },
+    { "id": "engine-orchestrator", "path": ".docgen/evidence/engine-orchestrator.json", "kind": "component", "scope": "global-template/docgen/bin/docgen.mjs" },
+    { "id": "engine-hooks", "path": ".docgen/evidence/engine-hooks.json", "kind": "component", "scope": "global-template/docgen/hooks" },
+    { "id": "engine-assets", "path": ".docgen/evidence/engine-assets.json", "kind": "component", "scope": "global-template/docgen/{prompts,schemas,project-template}" },
+    { "id": "agents", "path": ".docgen/evidence/agents.json", "kind": "component", "scope": "global-template/agents" },
+    { "id": "skills", "path": ".docgen/evidence/skills.json", "kind": "component", "scope": "global-template/skills" },
+    { "id": "commands", "path": ".docgen/evidence/commands.json", "kind": "component", "scope": "global-template/commands" },
+    { "id": "project-local-template", "path": ".docgen/evidence/project-local-template.json", "kind": "component", "scope": "project-local-template" }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "1.0",
+  "id": "repository",
+  "kind": "repository",
+  "scope": ".",
+  "facts": [
+    {
+      "id": "repo.identity",
+      "classification": "FACT",
+      "summary": "Package is 'commandcode-docgen-kit' at version 0.2.0.",
+      "source": { "path": "PACKAGE-MANIFEST.json" },
+      "details": { "name": "commandcode-docgen-kit", "version": "0.2.0" }
+    },
+    {
+      "id": "repo.defaultScope",
+      "classification": "FACT",
+      "summary": "Default installation scope is 'global' (engine installed once per user, repositories stay state-only).",
+      "source": { "path": "PACKAGE-MANIFEST.json", "symbol": "defaultInstallationScope" }
+    },
+    {
+      "id": "repo.counts",
+      "classification": "FACT",
+      "summary": "Manifest declares 5 agents, 22 skills, 10 commands, 9 schemas, 7 prompts.",
+      "source": { "path": "PACKAGE-MANIFEST.json", "symbol": "counts" },
+      "details": { "agents": 5, "skills": 22, "commands": 10, "schemas": 9, "prompts": 7 }
+    },
+    {
+      "id": "repo.layout",
+      "classification": "FACT",
+      "summary": "Repository root contains global-template/ (shipped engine) and project-local-template/ (self-contained mode), plus root installer scripts; docs/ exists but is empty.",
+      "source": { "path": "." }
+    },
+    {
+      "id": "repo.evidenceEmpty",
+      "classification": "FACT",
+      "summary": "Before this discovery, .docgen/evidence contained only .gitkeep (no prior artifacts).",
+      "source": { "path": ".docgen/evidence" }
+    },
+    {
+      "id": "repo.self-doc",
+      "classification": "INFERENCE",
+      "summary": "The discovery target is the DocGen Kit source itself; therefore these evidence artifacts describe the documentation tooling rather than a downstream application.",
+      "source": { "path": "README.md" },
+      "evidenceIds": ["repo.identity"]
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "1.0",
+  "id": "skills",
+  "kind": "component",
+  "scope": "global-template/skills",
+  "facts": [
+    {
+      "id": "skills.count",
+      "classification": "FACT",
+      "summary": "Twenty-two skill directories are present.",
+      "source": { "path": "global-template/skills" }
+    },
+    {
+      "id": "skills.groups",
+      "classification": "FACT",
+      "summary": "Groups: 10 doc-* core skills; 11 tech-* (camunda, hk2, jakarta-rest-jersey, java, jpa, kafka, kubernetes, maven, mybatis, postgresql, rabbitmq); 1 domain-cpq-order.",
+      "source": { "path": "global-template/skills" }
+    },
+    {
+      "id": "skills.map",
+      "classification": "INFERENCE",
+      "summary": "Grouping matches README 'Core documentation skills' (doc-*), 'Technology skills' (tech-*), and 'Domain skill' (domain-cpq-order).",
+      "source": { "path": "README.md", "symbol": "Skills" },
+      "evidenceIds": ["skills.groups"]
+    }
+  ]
+}

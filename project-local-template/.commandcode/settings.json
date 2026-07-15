@@ -1,0 +1,49 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .commandcode/hooks/docgen-session-context.mjs",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "write|edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .commandcode/hooks/docgen-guard-write-paths.mjs",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "shell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .commandcode/hooks/docgen-guard-shell.mjs",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "write|edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .commandcode/hooks/docgen-validate-written-artifact.mjs",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

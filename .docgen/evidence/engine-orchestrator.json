@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "1.0",
+  "id": "engine-orchestrator",
+  "kind": "component",
+  "scope": "global-template/docgen/bin/docgen.mjs",
+  "facts": [
+    {
+      "id": "orch.commands",
+      "classification": "FACT",
+      "summary": "Orchestrator CLI exposes: init, version, where, doctor (--global), status, validate, discover, analyze, plan, generate, audit, fix, snapshot, changed, update, all.",
+      "source": { "path": "global-template/docgen/bin/docgen.mjs", "symbol": "switch (command)" }
+    },
+    {
+      "id": "orch.rootDetect",
+      "classification": "FACT",
+      "summary": "findProjectRoot walks upward from cwd until it locates .docgen/project.json; absence triggers 'not initialized' failure for project commands.",
+      "source": { "path": "global-template/docgen/bin/docgen.mjs", "symbol": "findProjectRoot" }
+    },
+    {
+      "id": "orch.headlessArgs",
+      "classification": "FACT",
+      "summary": "Headless Command Code args are built as ['-p', --trust, --skip-onboarding, --yolo, --max-turns <stage|default>, optional --model]; DOCGEN_MAX_TURNS and DOCGEN_MODEL env vars override config.",
+      "source": { "path": "global-template/docgen/bin/docgen.mjs", "symbol": "commandCodeArgs" }
+    },
+    {
+      "id": "orch.env",
+      "classification": "FACT",
+      "summary": "runCommandCode sets DOCGEN_MODE=1, DOCGEN_STAGE, DOCGEN_TARGET and writes a per-run metadata file to .docgen/runs/<runId>.json before/after each headless run.",
+      "source": { "path": "global-template/docgen/bin/docgen.mjs", "symbol": "runCommandCode" }
+    },
+    {
+      "id": "orch.pipeline",
+      "classification": "FACT",
+      "summary": "The 'all' command runs doDiscover('.'), doAnalyze, doPlan, doGenerateAll, doAuditAll, doSnapshot in sequence; discover validates .docgen/evidence/index.json and analyze validates .docgen/model/system.json.",
+      "source": { "path": "global-template/docgen/bin/docgen.mjs", "symbol": "doDiscover/doAnalyze/switch" }
+    },
+    {
+      "id": "orch.assetOverride",
+      "classification": "FACT",
+      "summary": "assetFile resolves a project override at .docgen/<kind>/<name> before falling back to engineHome/<kind>/<name> for prompts and schemas.",
+      "source": { "path": "global-template/docgen/bin/docgen.mjs", "symbol": "assetFile" }
+    },
+    {
+      "id": "orch.validationGates",
+      "classification": "INFERENCE",
+      "summary": "Stages are enforced as validation gates: discover requires/validates evidence index, analyze requires evidence and validates system model, plan requires the system model, generate/audit operate on manifest pages.",
+      "source": { "path": "global-template/docgen/bin/docgen.mjs", "symbol": "doDiscover/doAnalyze/doPlan" },
+      "evidenceIds": ["orch.pipeline"]
+    }
+  ]
+}

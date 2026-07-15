@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "1.0",
+  "kitVersion": "0.2.0",
+  "updatedAt": null,
+  "stages": {
+    "discover": {
+      "status": "pending"
+    },
+    "analyze": {
+      "status": "pending"
+    },
+    "plan": {
+      "status": "pending"
+    },
+    "generate": {
+      "status": "pending"
+    },
+    "audit": {
+      "status": "pending"
+    }
+  }
+}

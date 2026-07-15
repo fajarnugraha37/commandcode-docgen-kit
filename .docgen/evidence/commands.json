@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0",
+  "id": "commands",
+  "kind": "component",
+  "scope": "global-template/commands",
+  "facts": [
+    {
+      "id": "commands.files",
+      "classification": "FACT",
+      "summary": "Ten global slash commands: docgen-analyze, docgen-audit, docgen-discover, docgen-doctor, docgen-fix, docgen-generate, docgen-init, docgen-plan, docgen-status, docgen-update.",
+      "source": { "path": "global-template/commands" }
+    },
+    {
+      "id": "commands.wrappers",
+      "classification": "INFERENCE",
+      "summary": "README states the /docgen-* commands are wrappers around the global docgen orchestrator rather than standalone logic.",
+      "source": { "path": "README.md", "symbol": "Global slash commands" }
+    },
+    {
+      "id": "commands.bodies",
+      "classification": "UNKNOWN",
+      "summary": "Command prompt bodies were not read; only filenames and the README wrapper description are confirmed.",
+      "source": { "path": "global-template/commands" }
+    }
+  ]
+}

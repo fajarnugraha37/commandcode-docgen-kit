@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "1.0",
+  "id": "engine-assets",
+  "kind": "component",
+  "scope": "global-template/docgen/{prompts,schemas,project-template}",
+  "facts": [
+    {
+      "id": "assets.prompts",
+      "classification": "FACT",
+      "summary": "Seven stage prompts: analyze.md, audit.md, discover.md, fix.md, generate.md, plan.md, update-impact.md.",
+      "source": { "path": "global-template/docgen/prompts" }
+    },
+    {
+      "id": "assets.schemas",
+      "classification": "FACT",
+      "summary": "Nine JSON schemas: audit-index, audit-page, component, evidence-artifact, evidence-index, manifest, system, update-plan, workflow.",
+      "source": { "path": "global-template/docgen/schemas" }
+    },
+    {
+      "id": "assets.projectTemplate",
+      "classification": "FACT",
+      "summary": "project-template ships README.md plus dirs: audit/, config/, evidence/, model/, plan/, prompts/, runs/, schemas/, state/.",
+      "source": { "path": "global-template/docgen/project-template" }
+    },
+    {
+      "id": "schema.evidenceArtifact",
+      "classification": "FACT",
+      "summary": "evidence-artifact.schema.json requires schemaVersion, id, kind, scope, facts[]; each fact requires id, classification in {FACT,INFERENCE,UNKNOWN}, summary, and source.path.",
+      "source": { "path": "global-template/docgen/schemas/evidence-artifact.schema.json" }
+    },
+    {
+      "id": "schema.evidenceIndex",
+      "classification": "FACT",
+      "summary": "evidence-index.schema.json requires schemaVersion, generatedAt, artifacts[] where each artifact has id, path, kind, scope.",
+      "source": { "path": "global-template/docgen/schemas/evidence-index.schema.json" }
+    }
+  ]
+}

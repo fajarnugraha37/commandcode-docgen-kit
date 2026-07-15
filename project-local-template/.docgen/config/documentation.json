@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "1.0",
+  "projectName": "",
+  "outputRoot": "docs",
+  "discoveryScopes": [
+    "."
+  ],
+  "exclude": [
+    ".git/**",
+    ".idea/**",
+    ".vscode/**",
+    ".commandcode/**",
+    ".docgen/**",
+    "docs/**",
+    "node_modules/**",
+    "target/**",
+    "build/**",
+    "dist/**",
+    "coverage/**",
+    "vendor/**",
+    "**/*.min.js",
+    "**/*.map",
+    "**/*.class",
+    "**/*.jar",
+    "**/*.war",
+    "**/*.zip"
+  ],
+  "sourceExtensions": [
+    ".java",
+    ".kt",
+    ".kts",
+    ".xml",
+    ".sql",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".properties",
+    ".md",
+    ".go",
+    ".rs",
+    ".cs",
+    ".js",
+    ".mjs",
+    ".cjs",
+    ".ts",
+    ".tsx",
+    ".vue",
+    ".proto",
+    ".bpmn",
+    ".dmn",
+    ".sh",
+    ".ps1",
+    ".dockerfile"
+  ],
+  "audiences": [
+    "engineer",
+    "architect",
+    "operator"
+  ],
+  "pageTypes": [
+    "overview",
+    "architecture",
+    "concept",
+    "guide",
+    "reference",
+    "operations"
+  ],
+  "requireEvidenceReferences": true,
+  "diagramFormat": "mermaid",
+  "maxDiscoveryScopeHint": "Prefer one module or bounded subsystem per discovery run for large repositories.",
+  "commandCode": {
+    "executable": "",
+    "trust": true,
+    "skipOnboarding": true,
+    "yolo": true,
+    "model": "",
+    "stageModels": {},
+    "maxTurns": {
+      "default": 20,
+      "discover": 30,
+      "analyze": 30,
+      "plan": 20,
+      "generate": 20,
+      "audit": 20,
+      "fix": 20,
+      "update-impact": 20
+    }
+  }
+}

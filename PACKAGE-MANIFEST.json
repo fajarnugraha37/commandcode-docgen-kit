@@ -1,0 +1,32 @@
+{
+  "name": "commandcode-docgen-kit",
+  "version": "0.2.0",
+  "defaultInstallationScope": "global",
+  "globalComponents": [
+    "agents",
+    "skills",
+    "commands",
+    "hooks",
+    "orchestrator",
+    "prompts",
+    "schemas",
+    "project-template"
+  ],
+  "projectComponents": [
+    ".docgen/config",
+    ".docgen/evidence",
+    ".docgen/model",
+    ".docgen/plan",
+    ".docgen/audit",
+    ".docgen/state",
+    ".docgen/runs",
+    "docs"
+  ],
+  "counts": {
+    "agents": 5,
+    "skills": 22,
+    "commands": 10,
+    "schemas": 9,
+    "prompts": 7
+  }
+}

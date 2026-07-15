@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "1.0",
+  "id": "distribution",
+  "kind": "distribution",
+  "scope": "install.mjs; install.sh; install.ps1; uninstall.mjs; PACKAGE-MANIFEST.json; VERSION",
+  "facts": [
+    {
+      "id": "dist.installerEntry",
+      "classification": "FACT",
+      "summary": "install.mjs is the cross-platform Node.js ESM installer; it reads VERSION at runtime to stamp kitVersion.",
+      "source": { "path": "install.mjs", "symbol": "version" }
+    },
+    {
+      "id": "dist.modes",
+      "classification": "FACT",
+      "summary": "install.mjs supports a default global mode and a --project-local <repository> self-contained mode.",
+      "source": { "path": "install.mjs", "symbol": "installProjectLocal" }
+    },
+    {
+      "id": "dist.globalCopy",
+      "classification": "FACT",
+      "summary": "Global install copies agents/, skills/, commands/ and the docgen engine from global-template into commandCodeHome (~/.commandcode), using sha256 change detection and optional --force backup.",
+      "source": { "path": "install.mjs", "symbol": "installGlobal" }
+    },
+    {
+      "id": "dist.hooksMerge",
+      "classification": "FACT",
+      "summary": "mergeGlobalSettings injects: SessionStart->docgen-session-context.mjs; PreToolUse write|edit->docgen-guard-write-paths.mjs; PreToolUse shell->docgen-guard-shell.mjs; PostToolUse write|edit->docgen-validate-written-artifact.mjs.",
+      "source": { "path": "install.mjs", "symbol": "mergeGlobalSettings" }
+    },
+    {
+      "id": "dist.installationRecord",
+      "classification": "FACT",
+      "summary": "Installer writes installation.json (scope, installed files) under commandCodeHome/docgen and optionally runs 'npm link' unless --no-link-cli.",
+      "source": { "path": "install.mjs", "symbol": "installGlobal" }
+    },
+    {
+      "id": "dist.uninstall",
+      "classification": "FACT",
+      "summary": "uninstall.mjs removes only files recorded in installation.json (skipping settings.json and docgen/), strips engine-pointing hook entries from settings.json, deletes ~/.commandcode/docgen, optionally npm unlinks, and never deletes repository .docgen/ or docs/.",
+      "source": { "path": "uninstall.mjs" }
+    },
+    {
+      "id": "dist.wrappers",
+      "classification": "FACT",
+      "summary": "install.sh (bash 'exec node') and install.ps1 (maps PowerShell switches to install.mjs args) are thin delegators to install.mjs.",
+      "source": { "path": "install.sh" }
+    }
+  ]
+}

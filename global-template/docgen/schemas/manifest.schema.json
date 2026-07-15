@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docgen:manifest:1.0",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "pages"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "generatedAt": {
+      "type": "string"
+    },
+    "pages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "title",
+          "type",
+          "purpose",
+          "evidence",
+          "models"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^docs/.*\\.md$"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "overview",
+              "architecture",
+              "concept",
+              "guide",
+              "reference",
+              "operations"
+            ]
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "array"
+          },
+          "models": {
+            "type": "array"
+          }
+        }
+      }
+    }
+  }
+}

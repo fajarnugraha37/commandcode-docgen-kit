@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "1.0",
+  "kitVersion": "0.2.0",
+  "updatedAt": "2026-07-15T18:58:31.539Z",
+  "stages": {
+    "discover": {
+      "status": "completed",
+      "updatedAt": "2026-07-15T18:58:31.517Z",
+      "scope": "."
+    },
+    "analyze": {
+      "status": "running",
+      "updatedAt": "2026-07-15T18:58:31.539Z",
+      "scope": "all current evidence"
+    },
+    "plan": {
+      "status": "pending"
+    },
+    "generate": {
+      "status": "pending"
+    },
+    "audit": {
+      "status": "pending"
+    },
+    "init": {
+      "status": "completed",
+      "updatedAt": "2026-07-15T18:52:05.478Z",
+      "engineScope": "global"
+    }
+  }
+}
