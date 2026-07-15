@@ -38,25 +38,48 @@ Install the engine once. Initialize any number of repositories independently.
 
 ---
 
-## What's new in v0.4.0
+## What's new in v0.5.0
 
-v0.4.0 upgrades DocGen from a code-oriented documentation generator into a **deep multi-page system knowledge-base generator**. The target is breadth and depth comparable to a curated Mintlify-style site, while remaining source-grounded.
+v0.5.0 is a reliability and execution-efficiency release. It fixes the failure mode where a writer correctly created `docs/orientation/overview.md` but the manifest contained `orientation/overview`, causing validation to fail only after hours of discovery, analysis and planning.
 
 Major additions:
 
-- resilient evidence-index normalization that fixes the `missing required key: artifacts` failure even when a model emits `files`, `entries`, or only artifact files;
-- a dedicated `doc-domain-analyst` semantics stage;
-- normalized `business.json`, `flows.json`, and `catalogs.json`;
-- business capabilities, actors, concepts, rules, validations, decisions, branch conditions, lifecycles, invariants and use cases;
-- six distinct flow types: business, control, request, traffic, data and event;
-- exhaustive endpoint catalog support;
-- exhaustive Kafka/RabbitMQ/queue/stream handler and producer catalog support;
-- external/internal/cloud service and dependency catalogs;
-- category-rich multi-page navigation planning with coverage tags and automatic coverage-repair planning;
-- `docs/SUMMARY.md` generation from the manifest navigation tree;
-- Mermaid-only diagram enforcement;
-- stronger audit checks for omitted rules, branches, flow steps, endpoints, handlers and dependencies;
-- default pipeline: discovery → technical analysis → semantics/catalog analysis → multi-page planning → generation/enrichment → audit/repair → quality gate.
+- **canonical manifest paths**: `orientation/overview`, `/orientation/overview.md`, and `docs/orientation/overview.md` normalize to `docs/orientation/overview.md`;
+- **fail-fast manifest preflight** before the first page-generation request;
+- deterministic resolution of evidence/model IDs to exact repository-relative paths;
+- explicit rejection of unresolved inputs, duplicate ids/paths, unsafe paths and broken navigation before generation;
+- **resumable-by-default execution** with page-level checkpoints;
+- existing valid pages are skipped rather than regenerated;
+- current audit reports are reused when their recorded `pageHash` still matches;
+- generation, enrichment and audit are batched to reduce provider/API requests;
+- comprehensive enrichment now runs only for pages that fail deterministic local quality gates;
+- batch failure falls back only for missing/invalid pages rather than restarting the entire batch;
+- automatic provider retry for rate limit, network and API 5xx failures;
+- exponential backoff, jitter, visible cooldown countdown and per-attempt logs;
+- textual detection of rate-limit responses such as HTTP `429` even when a provider returns a generic exit code;
+- configurable stage timeouts to prevent a single hung process from running indefinitely;
+- new `docgen preflight` and `docgen resume` commands;
+- `docgen all` resumes by default; `docgen all --fresh` intentionally starts over;
+- state records generated counts, completed batches, failed stages and per-page hashes.
+
+The deep knowledge-base capabilities from the prior release remain: business rules, decisions, branch conditions, lifecycles, six flow types, endpoint/message/integration catalogs, deep multi-page navigation and Mermaid-only diagrams.
+
+### Recovery after a v0.4.x generation-path failure
+
+Upgrade the global engine, then continue the existing repository without deleting `.docgen` or `docs`:
+
+```powershell
+# From the extracted v0.5.0 release
+.\install.ps1 -Force
+
+cd C:\path\to\your\repository
+
+docgen migrate
+docgen preflight
+docgen resume
+```
+
+If the previous run already created `docs/orientation/overview.md`, v0.5.0 normalizes the old manifest path and skips that valid page. Discovery, analysis, semantics and planning checkpoints are also reused when their artifacts are present.
 
 ## Table of contents
 
@@ -77,6 +100,9 @@ Major additions:
 13. [Skills](#skills)
 14. [Global slash commands](#global-slash-commands)
 15. [CLI command reference](#cli-command-reference)
+16. [Fail-fast preflight and canonical paths](#fail-fast-preflight-and-canonical-paths)
+17. [Resumability, batching, and checkpoints](#resumability-batching-and-checkpoints)
+18. [Rate limits, retries, and provider failures](#rate-limits-retries-and-provider-failures)
 16. [Evidence model](#evidence-model)
 17. [FACT, INFERENCE, and UNKNOWN](#fact-inference-and-unknown)
 18. [Documentation manifest and bounded generation](#documentation-manifest-and-bounded-generation)
@@ -156,7 +182,7 @@ DocGen does not require a particular renderer.
 
 Earlier versions of the kit copied the entire engine into every target repository. That model is useful for a fully self-contained team-owned repository, but it is inefficient when one user wants to use the same documentation system across many repositories.
 
-The default architecture in v0.4.0 is therefore:
+The default architecture in v0.5.0 is therefore:
 
 ```text
 install once globally
@@ -212,14 +238,14 @@ The kit currently provides:
 
 - **6 specialized custom agents**
 - **28 reusable skills**
-- **13 global slash commands**
+- **15 global slash commands**
 - **conditional global hooks**
 - **12 JSON artifact schemas**
-- **9 bounded stage prompts**
+- **12 bounded stage prompts**
 - **a global cross-platform Node.js orchestrator**
 - **per-repository state and configuration**
 - **runtime compatibility diagnostics**
-- **bounded generation per documentation page**
+- **batched bounded generation with per-page validation and fallback**
 - **independent factual audit**
 - **audit-backed repair**
 - **source fingerprinting**
@@ -294,10 +320,10 @@ Extract the release ZIP first.
 
 ```powershell
 Expand-Archive `
-  .\commandcode-docgen-kit-0.4.0.zip `
+  .\commandcode-docgen-kit-0.5.0.zip `
   -DestinationPath .\commandcode-docgen-kit
 
-cd .\commandcode-docgen-kit\commandcode-docgen-kit-0.4.0
+cd .\commandcode-docgen-kit\commandcode-docgen-kit-0.5.0
 
 .\install.ps1
 ```
@@ -305,8 +331,8 @@ cd .\commandcode-docgen-kit\commandcode-docgen-kit-0.4.0
 ## macOS / Linux
 
 ```bash
-unzip commandcode-docgen-kit-0.4.0.zip
-cd commandcode-docgen-kit-0.4.0
+unzip commandcode-docgen-kit-0.5.0.zip
+cd commandcode-docgen-kit-0.5.0
 ./install.sh
 ```
 
@@ -528,7 +554,7 @@ docgen snapshot
 
 # Live progress, heartbeat, logs, and error visibility
 
-DocGen v0.4.0 does not run Command Code as a silent blocking child process. Every LLM-backed stage is monitored as a live asynchronous process.
+DocGen v0.5.0 does not run Command Code as a silent blocking child process. Every LLM-backed stage is monitored as a live asynchronous process.
 
 A run now looks like:
 
@@ -661,7 +687,7 @@ Command Code reached --max-turns
 
 # Comprehensive quality profile
 
-The default v0.4.0 profile is:
+The default v0.5.0 profile is:
 
 ```json
 {
@@ -1374,6 +1400,14 @@ Examples:
 ```
 
 ```text
+/docgen-preflight
+```
+
+```text
+/docgen-resume
+```
+
+```text
 /docgen-generate quote-lifecycle
 ```
 
@@ -1565,6 +1599,26 @@ Output:
 .docgen/plan/manifest.json
 ```
 
+## `docgen preflight`
+
+Normalize and validate the entire manifest before page generation:
+
+```powershell
+docgen preflight
+```
+
+This is the recommended command immediately after `docgen plan` when running stages manually.
+
+## `docgen resume`
+
+Continue a failed or interrupted full pipeline from existing checkpoints:
+
+```powershell
+docgen resume
+```
+
+It skips completed stages, valid pages, and current audits.
+
 ## `docgen generate <page-id>`
 
 Generate exactly one page.
@@ -1575,7 +1629,7 @@ docgen generate quote-lifecycle
 
 ## `docgen generate --all`
 
-Generate all pages in manifest order, each in a separate bounded Command Code run.
+Generate all pages using bounded batches. Every page is validated independently, and only missing/invalid pages fall back to individual generation.
 
 ```bash
 docgen generate --all
@@ -1590,11 +1644,11 @@ Run the explicit depth-and-completeness pass for one existing generated page.
 docgen enrich quote-lifecycle
 ```
 
-This is normally automatic when the `comprehensive` quality profile is active.
+This is normally automatic only for pages that fail deterministic local quality gates under the `comprehensive` profile.
 
 ## `docgen enrich --all`
 
-Run the enrichment pass for every manifest page.
+Run targeted enrichment across all manifest pages that currently fail local quality gates, using bounded batches.
 
 ```bash
 docgen enrich --all
@@ -1625,7 +1679,7 @@ docgen audit quote-lifecycle
 
 ## `docgen audit --all`
 
-Audit all generated pages individually.
+Audit all generated pages in bounded batches while preserving one independent report per page. Current reports are skipped when their `pageHash` matches.
 
 ```bash
 docgen audit --all
@@ -1679,7 +1733,10 @@ Explicit paths:
 docgen update src/main/java/com/acme/quote/QuoteService.java
 ```
 
-## `docgen all`
+## `docgen all [--fresh]`
+
+The default is resumable. Use `--fresh` only to deliberately regenerate all stage/page outputs.
+
 
 Run the complete initial pipeline:
 
@@ -1690,10 +1747,181 @@ docgen all
 Equivalent conceptually to:
 
 ```text
-discover → analyze → semantics → plan → generate all → audit all → snapshot
+discover → analyze → semantics → preflight → batched generation → targeted enrichment → batched audit → repair/re-audit → quality → snapshot
 ```
 
 ---
+
+# Fail-fast preflight and canonical paths
+
+`docgen preflight` validates the complete documentation plan before any page-generation LLM request is sent.
+
+It performs these deterministic checks:
+
+- canonicalizes every target to `docs/**/*.md`;
+- adds a missing `docs/` prefix;
+- adds a missing `.md` extension;
+- rejects traversal and targets outside `docs/`;
+- resolves evidence artifact IDs through `.docgen/evidence/index.json`;
+- resolves normalized model names such as `system` to `.docgen/model/system.json`;
+- verifies every evidence/model input exists;
+- detects duplicate page ids and output paths;
+- verifies navigation and related-page references;
+- evaluates conditional coverage requirements.
+
+The result is written to:
+
+```text
+.docgen/plan/preflight.json
+```
+
+A failed preflight stops immediately. It does not begin page 1 of 59 and discover a path/input mismatch hours later.
+
+Example normalization:
+
+```text
+manifest input:  orientation/overview
+canonical path: docs/orientation/overview.md
+```
+
+Run it explicitly after planning:
+
+```powershell
+docgen plan
+docgen preflight
+docgen generate --all
+```
+
+`docgen all` and `docgen resume` invoke the same preflight automatically.
+
+# Resumability, batching, and checkpoints
+
+v0.5.0 is resumable by default.
+
+```powershell
+docgen resume
+```
+
+is equivalent to continuing the full pipeline while reusing valid checkpoints. `docgen all` uses the same behavior unless `--fresh` is supplied.
+
+The orchestrator reuses:
+
+- completed evidence discovery when `index.json` exists;
+- completed technical analysis when `system.json` exists;
+- completed semantics when `business.json`, `flows.json`, and `catalogs.json` exist;
+- a completed plan when manifest preflight passes;
+- generated Markdown pages that pass structural validation;
+- audit reports whose `pageHash` matches the current page content.
+
+Per-page state is stored in:
+
+```text
+.docgen/state/pages.json
+```
+
+A provider failure in generation batch 7 does not invalidate batches 1-6. Rerunning `docgen resume` skips their valid pages.
+
+## Batched request strategy
+
+Defaults:
+
+```json
+{
+  "execution": {
+    "generateBatchSize": 4,
+    "enrichBatchSize": 4,
+    "auditBatchSize": 6,
+    "resumeByDefault": true,
+    "skipValidPages": true
+  }
+}
+```
+
+For a 59-page plan, the base request count changes approximately from:
+
+```text
+v0.4.x worst-case baseline
+59 generate + 59 enrich + 59 audit = 177 LLM runs
+```
+
+into:
+
+```text
+v0.5.0 default baseline
+ceil(59 / 4) generation batches = 15
+ceil(59 / 6) audit batches      = 10
+enrichment                      = only pages failing local quality gates
+```
+
+A batch that produces only three of four pages does not restart all four. DocGen validates every target and retries only the missing/invalid page individually.
+
+Use a clean rerun only when intentionally discarding checkpoints:
+
+```powershell
+docgen all --fresh
+```
+
+# Rate limits, retries, and provider failures
+
+Command Code documents rate-limit failures as exit code `5`; connection failures use `6`, API 5xx failures use `7`, and max-turn exhaustion uses `8`. v0.5.0 handles `5`, `6`, and `7` as retryable by default. It also detects common provider text such as `429`, `rate limit exceeded`, `too many requests`, and `quota exceeded` when a provider reports a generic exit code.
+
+Default policy:
+
+```json
+{
+  "retry": {
+    "enabled": true,
+    "maxAttempts": 4,
+    "retryableExitCodes": [5, 6, 7],
+    "initialDelaySeconds": 15,
+    "rateLimitDelaySeconds": 30,
+    "maxDelaySeconds": 120,
+    "multiplier": 2,
+    "jitterRatio": 0.2,
+    "countdownSeconds": 10,
+    "interRequestDelaySeconds": 3
+  }
+}
+```
+
+During cooldown the terminal remains explicit:
+
+```text
+[docgen] retryable rate-limited on generate:overview; retry 2/4 after ~30s.
+[docgen] retry cooldown (rate-limited): 30s remaining
+[docgen] retry cooldown (rate-limited): 20s remaining
+[docgen] retry cooldown (rate-limited): 10s remaining
+```
+
+Each attempt has separate metadata, stdout, and stderr logs under `.docgen/runs/`.
+
+DocGen remains serial by default. This aligns with Command Code guidance to reduce concurrent sessions when rate limited. Batching reduces request count without introducing parallel provider pressure.
+
+Max-turn exhaustion (`8`) is not blindly retried because a fresh retry may duplicate partial writes. Increase the stage turn budget or resume after inspecting the generated artifacts.
+
+## Stage timeouts
+
+A living child process is not allowed to run forever. Default timeouts are configurable:
+
+```json
+{
+  "execution": {
+    "stageTimeoutMinutes": {
+      "default": 20,
+      "discover": 35,
+      "analyze": 35,
+      "semantics": 35,
+      "plan": 25,
+      "generate": 20,
+      "enrich": 15,
+      "audit": 15,
+      "fix": 15
+    }
+  }
+}
+```
+
+A timeout terminates the child process, records exit classification `stage-timeout`, preserves completed files/checkpoints, and allows `docgen resume`.
 
 # Evidence model
 
@@ -2319,7 +2547,7 @@ For a team that needs exact engine reproducibility inside the repository, use th
 
 ## Automatic additive migration from v0.3.x project config
 
-When v0.4.0 runs inside a repository initialized by an older global-first release, it additively merges new defaults into `.docgen/config/documentation.json`. Existing custom scalar values and existing array entries are preserved; new page types, audiences, semantics turn-budget defaults, Mermaid-only quality settings, and knowledge-base settings are added. The project marker is updated to the current kit version.
+When v0.5.0 runs inside a repository initialized by an older global-first release, it additively merges new defaults into `.docgen/config/documentation.json`. Existing custom scalar values and existing array entries are preserved; new page types, audiences, semantics turn-budget defaults, Mermaid-only quality settings, and knowledge-base settings are added. The project marker is updated to the current kit version.
 
 You can run the migration explicitly:
 
@@ -2333,18 +2561,18 @@ This avoids `docgen init --force`, which could overwrite project-owned configura
 
 ## Migrating from v0.1.x project-local installs
 
-Version 0.1.x installed the complete engine inside each repository. Version 0.4.0 defaults to a global engine.
+Version 0.1.x installed the complete engine inside each repository. Version 0.5.0 defaults to a global engine.
 
 Recommended migration:
 
 ```bash
-# 1. Install v0.4.0 globally once
+# 1. Install v0.5.0 globally once
 node install.mjs --force
 
 # 2. Enter an existing v0.1.x repository
 cd /path/to/repository
 
-# 3. Add the v0.4.0 project marker/template without replacing existing config
+# 3. Add the v0.5.0 project marker/template without replacing existing config
 docgen init
 
 # 4. Verify the global runtime
@@ -2522,10 +2750,47 @@ Do not mix both modes casually in the same repository because duplicate global a
 
 # Troubleshooting
 
+## Writer created the page but DocGen says `Missing generated page`
+
+This was a v0.4.x manifest-path normalization defect. A manifest target such as `orientation/overview` was validated literally even though the writer correctly created `docs/orientation/overview.md`.
+
+Upgrade and resume:
+
+```powershell
+.\install.ps1 -Force
+cd C:\path\to\repository
+docgen migrate
+docgen preflight
+docgen resume
+```
+
+Do not delete the generated page or rerun discovery. The canonical path is repaired in the manifest and the existing valid page is skipped.
+
+## Provider rate limit or HTTP 429
+
+v0.5.0 retries automatically with visible exponential backoff. Review the attempt logs in `.docgen/runs/`. Reduce other concurrent Command Code sessions and lower batch sizes only when the provider still rejects batched requests.
+
+To make the policy more conservative:
+
+```json
+{
+  "execution": {
+    "generateBatchSize": 2,
+    "auditBatchSize": 3
+  },
+  "retry": {
+    "rateLimitDelaySeconds": 60,
+    "maxAttempts": 5,
+    "interRequestDelaySeconds": 5
+  }
+}
+```
+
+
 
 ## `docgen all` appears to hang or stays quiet
 
-v0.4.0 prints a heartbeat while every Command Code child process is alive. You should see output similar to:
+v0.5.0 prints a heartbeat while every Command Code child process is alive. You should see output similar to:
 
 ```text
 [docgen] discover:. RUNNING | elapsed 1m 20s | pid 18420 | changed artifacts 7
@@ -2908,7 +3173,7 @@ For a repository that requires an exact frozen engine version, use the self-cont
 
 # Compatibility notes
 
-The v0.4.0 architecture intentionally aligns with Command Code user-level and project-level extension scopes:
+The v0.5.0 architecture intentionally aligns with Command Code user-level and project-level extension scopes:
 
 ```text
 User-level reusable components:
@@ -3039,7 +3304,7 @@ This workflow preserves the most important principle of the system:
 
 # Deep system knowledge-base target
 
-DocGen v0.4.0 does **not** treat the two benchmark home pages as the complete target. A Mintlify-style site is a hierarchy of categories, pages, and deep sections. DocGen therefore optimizes for **breadth × depth**:
+DocGen v0.5.0 does **not** treat the two benchmark home pages as the complete target. A Mintlify-style site is a hierarchy of categories, pages, and deep sections. DocGen therefore optimizes for **breadth × depth**:
 
 ```text
 Repository
@@ -3122,7 +3387,7 @@ The discovery contract requires:
 }
 ```
 
-However, cheap models can still emit semantically equivalent shapes such as `files` or `entries`. v0.4.0 normalizes these variants after discovery. If no list exists, it scans `.docgen/evidence/**` and constructs canonical `artifacts[]` deterministically. The exact v0.3.0 failure:
+However, cheap models can still emit semantically equivalent shapes such as `files` or `entries`. v0.5.0 normalizes these variants after discovery. If no list exists, it scans `.docgen/evidence/**` and constructs canonical `artifacts[]` deterministically. The exact v0.3.0 failure:
 
 ```text
 Error: .docgen/evidence/index.json missing required key: artifacts

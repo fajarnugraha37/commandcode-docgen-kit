@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docgen:component:1.0",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "id",
+    "name",
+    "classification",
+    "evidenceIds"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "classification": {
+      "enum": [
+        "FACT",
+        "INFERENCE",
+        "UNKNOWN"
+      ]
+    },
+    "evidenceIds": {
+      "type": "array"
+    }
+  }
+}

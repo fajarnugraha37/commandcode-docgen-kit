@@ -44,3 +44,10 @@ Required coverage tags are conditional on evidence. Examples:
 {{MISSING_COVERAGE}}
 
 Avoid duplicate ownership of the same concept. Preserve stable page ids/paths where reasonable. All planned diagrams must be Mermaid.
+
+
+Hard manifest rules:
+- every page path must be canonical: `docs/<category>/<slug>.md`;
+- `evidence[]` and `models[]` must contain exact existing repository-relative paths or exact evidence artifact IDs from `.docgen/evidence/index.json`;
+- never invent shorthand filenames such as `system.json` when the actual path is `.docgen/model/system.json`;
+- before finishing, verify all page ids, paths, navigation references, evidence references and model references.

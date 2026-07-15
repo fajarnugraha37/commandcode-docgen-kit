@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.1",
+  "schemaVersion": "1.2",
   "projectName": "",
   "outputRoot": "docs",
   "discoveryScopes": [
@@ -129,7 +129,8 @@
       "endpoint-catalog",
       "message-handler-catalog",
       "external-dependency-catalog"
-    ]
+    ],
+    "enrichmentMode": "on-failure"
   },
   "progress": {
     "heartbeatSeconds": 10,
@@ -151,5 +152,41 @@
       "event"
     ],
     "diagramFormat": "mermaid-only"
+  },
+  "execution": {
+    "resumeByDefault": true,
+    "skipValidPages": true,
+    "generateBatchSize": 4,
+    "enrichBatchSize": 4,
+    "auditBatchSize": 6,
+    "failFastPreflight": true,
+    "stageTimeoutMinutes": {
+      "default": 20,
+      "discover": 35,
+      "analyze": 35,
+      "semantics": 35,
+      "plan": 25,
+      "generate": 20,
+      "enrich": 15,
+      "audit": 15,
+      "fix": 15,
+      "update-impact": 15
+    }
+  },
+  "retry": {
+    "enabled": true,
+    "maxAttempts": 4,
+    "retryableExitCodes": [
+      5,
+      6,
+      7
+    ],
+    "initialDelaySeconds": 15,
+    "rateLimitDelaySeconds": 30,
+    "maxDelaySeconds": 120,
+    "multiplier": 2,
+    "jitterRatio": 0.2,
+    "countdownSeconds": 10,
+    "interRequestDelaySeconds": 3
   }
 }

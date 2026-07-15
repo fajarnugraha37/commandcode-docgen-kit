@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docgen:manifest:1.1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "navigation",
+    "pages"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "generatedAt": {
+      "type": "string"
+    },
+    "navigation": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "pages"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "pages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "title",
+          "type",
+          "category",
+          "purpose",
+          "summary",
+          "evidence",
+          "models",
+          "audience",
+          "requiredSections",
+          "diagramIntents",
+          "coverageTags",
+          "relatedPages"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^docs/.*\\.md$"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "overview",
+              "architecture",
+              "business",
+              "concept",
+              "flow",
+              "guide",
+              "reference",
+              "data",
+              "integration",
+              "operations",
+              "troubleshooting"
+            ]
+          },
+          "category": {
+            "type": "string"
+          },
+          "section": {
+            "type": "string"
+          },
+          "order": {
+            "type": "number"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "array"
+          },
+          "models": {
+            "type": "array"
+          },
+          "audience": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "requiredSections": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "diagramIntents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "coverageTags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "requiredTables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "relatedPages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "qualityHints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}
