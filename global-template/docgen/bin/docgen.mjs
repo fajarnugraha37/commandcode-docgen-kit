@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const self = fileURLToPath(import.meta.url);
@@ -80,6 +80,8 @@ function commandCodeArgs(stage) {
 
   const model = process.env.DOCGEN_MODEL || cc.stageModels?.[stage] || cc.model;
   if (model) args.push('--model', String(model));
+  const progress = loadConfig().progress ?? {};
+  if (progress.verboseCommandCode !== false) args.push('--verbose');
   return args;
 }
 function assetFile(kind, name) {
@@ -93,32 +95,148 @@ function renderPrompt(name, vars = {}) {
   for (const [k, v] of Object.entries(vars)) text = text.replaceAll(`{{${k}}}`, String(v));
   return text;
 }
-function runCommandCode(stage, prompt, target = '') {
+const EXIT_CLASSIFICATION = {
+  0: ['success', 'Command Code completed successfully.'],
+  1: ['general-error', 'Command Code returned a general error.'],
+  3: ['not-authenticated', 'Command Code is not authenticated. Run `cmd login` (`cmdc login` on native Windows).'],
+  4: ['permission-denied', 'Command Code denied a required permission or a DocGen hook blocked an operation.'],
+  5: ['rate-limited', 'The LLM/API provider rate limit was exceeded. Retry later or change provider/model.'],
+  6: ['network-failure', 'Command Code could not reach the API/provider. Check network, proxy, DNS, or provider availability.'],
+  7: ['api-server-error', 'The LLM/API provider returned a server-side 5xx error.'],
+  8: ['max-turns', 'The headless max-turn limit was reached before completion. Increase commandCode.maxTurns for this stage.'],
+  130: ['interrupted', 'The process was interrupted by SIGINT/SIGTERM.']
+};
+
+function duration(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return h ? `${h}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s` : `${m}m ${String(s).padStart(2, '0')}s`;
+}
+function bar(current, total, width = 24) {
+  if (!total || total < 1) return '[????????????????????????]';
+  const ratio = Math.min(1, Math.max(0, current / total));
+  const filled = Math.round(ratio * width);
+  return `[${'='.repeat(filled)}${'.'.repeat(width - filled)}] ${(ratio * 100).toFixed(0).padStart(3)}%`;
+}
+function pageWordCount(text) {
+  return (text.replace(/```[\s\S]*?```/g, ' ').match(/\b[\p{L}\p{N}_'-]+\b/gu) ?? []).length;
+}
+function headingNames(text) {
+  return [...text.matchAll(/^#{2,6}\s+(.+)$/gm)].map((m) => m[1].trim().toLowerCase());
+}
+function normalizeHeading(s) { return String(s).toLowerCase().replace(/[`*_]/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
+function qualityConfig() { return loadConfig().quality ?? {}; }
+function progressConfig() { return loadConfig().progress ?? {}; }
+function qualityProfile() { return process.env.DOCGEN_QUALITY_PROFILE || qualityConfig().profile || 'balanced'; }
+function isComprehensive() { return qualityProfile() === 'comprehensive'; }
+function printItemProgress(action, current, total, id = '') {
+  console.log(`\n${bar(current, total)} ${action} ${current}/${total}${id ? ` — ${id}` : ''}`);
+}
+function recentArtifactActivity(sinceMs) {
+  let count = 0;
+  for (const relDir of ['.docgen', 'docs']) {
+    const base = path.join(root, relDir);
+    if (!fs.existsSync(base)) continue;
+    const stack = [base];
+    while (stack.length) {
+      const dir = stack.pop();
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) stack.push(full);
+        else {
+          try { if (fs.statSync(full).mtimeMs >= sinceMs) count++; } catch {}
+        }
+      }
+    }
+  }
+  return count;
+}
+
+async function runCommandCode(stage, prompt, target = '', progressLabel = '') {
   const bin = commandCodeBin();
   if (!bin) fail('Command Code executable not found. Install it or set DOCGEN_COMMAND_CODE_BIN.');
   const args = commandCodeArgs(stage);
   const runId = `${new Date().toISOString().replace(/[:.]/g, '-')}-${stage}`;
+  const startedMs = Date.now();
   const meta = {
-    schemaVersion: '1.0',
-    runId, stage, target, startedAt: now(),
-    commandCodeBin: bin, commandCodeArgs: args,
-    status: 'running'
+    schemaVersion: '1.1', runId, stage, target, progressLabel, startedAt: now(),
+    commandCodeBin: bin, commandCodeArgs: args, status: 'running'
   };
-  const metaPath = path.join(root, '.docgen', 'runs', `${runId}.json`);
+  const runDir = path.join(root, '.docgen', 'runs');
+  fs.mkdirSync(runDir, { recursive: true });
+  const metaPath = path.join(runDir, `${runId}.json`);
+  const stdoutLogPath = path.join(runDir, `${runId}.stdout.log`);
+  const stderrLogPath = path.join(runDir, `${runId}.stderr.log`);
   writeJson(metaPath, meta);
+  fs.writeFileSync(stdoutLogPath, ''); fs.writeFileSync(stderrLogPath, '');
+
   const env = { ...process.env, DOCGEN_MODE: '1', DOCGEN_STAGE: stage, DOCGEN_TARGET: target };
-  console.log(`\n==> ${stage}${target ? `: ${target}` : ''}`);
+  console.log(`\n==> ${stage}${target ? `: ${target}` : ''}${progressLabel ? ` | ${progressLabel}` : ''}`);
   console.log(`    ${bin} ${args.join(' ')}`);
-  const result = spawnSync(bin, args, { cwd: root, env, input: prompt, encoding: 'utf8', stdio: ['pipe', 'inherit', 'inherit'], shell: process.platform === 'win32' });
-  meta.finishedAt = now(); meta.exitCode = result.status; meta.status = result.status === 0 ? 'completed' : 'failed';
-  writeJson(metaPath, meta);
-  if (result.error) fail(`${stage} failed to launch: ${result.error.message}`);
-  if (result.status !== 0) {
-    const hint = result.status === 3 ? ' Command Code is not authenticated; run `cmd login` (or `cmdc login` on native Windows).'
-      : result.status === 8 ? ' The headless max-turn limit was reached; increase commandCode.maxTurns for this stage or DOCGEN_MAX_TURNS.'
-      : '';
-    fail(`${stage} failed with exit code ${result.status}.${hint}`, result.status || 1);
-  }
+  console.log(`    logs: ${rel(stdoutLogPath)} | ${rel(stderrLogPath)}`);
+
+  const pc = progressConfig();
+  const heartbeatMs = Math.max(2, Number(pc.heartbeatSeconds ?? 10)) * 1000;
+  const noOutputWarnMs = Math.max(5, Number(pc.noOutputWarningSeconds ?? 45)) * 1000;
+  let lastOutputMs = Date.now();
+  let warnedNoOutput = false;
+  let stderrTail = '';
+
+  return await new Promise((resolve, reject) => {
+    const child = spawn(bin, args, {
+      cwd: root, env, shell: process.platform === 'win32', stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true
+    });
+    meta.pid = child.pid ?? null; writeJson(metaPath, meta);
+
+    const onChunk = (stream, chunk, logPath) => {
+      lastOutputMs = Date.now(); warnedNoOutput = false;
+      const text = chunk.toString();
+      fs.appendFileSync(logPath, text);
+      if (stream === 'stderr') stderrTail = (stderrTail + text).slice(-12000);
+      if (pc.showCommandOutput !== false) (stream === 'stdout' ? process.stdout : process.stderr).write(text);
+    };
+    child.stdout.on('data', (c) => onChunk('stdout', c, stdoutLogPath));
+    child.stderr.on('data', (c) => onChunk('stderr', c, stderrLogPath));
+
+    const heartbeat = setInterval(() => {
+      const nowMs = Date.now();
+      const quiet = nowMs - lastOutputMs;
+      const artifacts = recentArtifactActivity(startedMs);
+      const quietMsg = quiet >= noOutputWarnMs ? ` | no CLI output for ${duration(quiet)}` : '';
+      console.log(`[docgen] ${stage}${target ? `:${target}` : ''} RUNNING | elapsed ${duration(nowMs - startedMs)} | pid ${child.pid ?? '?'} | changed artifacts ${artifacts}${quietMsg}`);
+      if (quiet >= noOutputWarnMs && !warnedNoOutput) {
+        warnedNoOutput = true;
+        console.log('[docgen] The process is still alive. Command Code headless may be quiet while the model is reasoning/tooling; API/network failures will be surfaced by stderr or the documented exit code.');
+      }
+    }, heartbeatMs);
+
+    child.on('error', (err) => {
+      clearInterval(heartbeat);
+      meta.finishedAt = now(); meta.status = 'failed-to-launch'; meta.error = err.message;
+      writeJson(metaPath, meta);
+      reject(new Error(`${stage} failed to launch: ${err.message}`));
+    });
+    child.on('close', (code, signal) => {
+      clearInterval(heartbeat);
+      const exitCode = code ?? (signal ? 130 : 1);
+      const [classification, explanation] = EXIT_CLASSIFICATION[exitCode] ?? ['unknown-error', `Command Code exited with code ${exitCode}.`];
+      meta.finishedAt = now(); meta.durationMs = Date.now() - startedMs; meta.exitCode = exitCode;
+      meta.signal = signal ?? null; meta.status = exitCode === 0 ? 'completed' : 'failed';
+      meta.errorClassification = classification; meta.stdoutLog = rel(stdoutLogPath); meta.stderrLog = rel(stderrLogPath);
+      writeJson(metaPath, meta);
+      console.log(`[docgen] ${stage}${target ? `:${target}` : ''} ${exitCode === 0 ? 'COMPLETED' : 'FAILED'} | ${duration(meta.durationMs)} | exit ${exitCode} (${classification})`);
+      if (exitCode !== 0) {
+        const tail = stderrTail.trim();
+        const detail = tail ? `\n\nLast stderr output:\n${tail}` : '';
+        reject(Object.assign(new Error(`${stage} failed: ${explanation}${detail}`), { exitCode }));
+      } else resolve(meta);
+    });
+
+    child.stdin.on('error', () => {});
+    child.stdin.end(prompt);
+  }).catch((err) => fail(err.message, err.exitCode || 1));
 }
 
 function loadManifest() {
@@ -174,9 +292,9 @@ function validateStatic() {
   validateSkills(errors);
   const requiredAgents = ['doc-discoverer', 'doc-architect', 'doc-planner', 'doc-writer', 'doc-auditor'];
   for (const a of requiredAgents) if (!fs.existsSync(path.join(commandCodeHome, 'agents', `${a}.md`))) errors.push(`Missing global agent: ${a}`);
-  const requiredCommands = ['docgen-init', 'docgen-doctor', 'docgen-discover', 'docgen-analyze', 'docgen-plan', 'docgen-generate', 'docgen-audit', 'docgen-fix', 'docgen-update', 'docgen-status'];
+  const requiredCommands = ['docgen-init', 'docgen-doctor', 'docgen-discover', 'docgen-analyze', 'docgen-plan', 'docgen-generate', 'docgen-audit', 'docgen-fix', 'docgen-update', 'docgen-status', 'docgen-enrich', 'docgen-quality'];
   for (const c of requiredCommands) if (!fs.existsSync(path.join(commandCodeHome, 'commands', `${c}.md`))) errors.push(`Missing global command: ${c}`);
-  for (const prompt of ['discover.md', 'analyze.md', 'plan.md', 'generate.md', 'audit.md', 'fix.md', 'update-impact.md']) if (!fs.existsSync(assetFile('prompts', prompt))) errors.push(`Missing prompt: ${prompt}`);
+  for (const prompt of ['discover.md', 'analyze.md', 'plan.md', 'generate.md', 'enrich.md', 'audit.md', 'fix.md', 'update-impact.md']) if (!fs.existsSync(assetFile('prompts', prompt))) errors.push(`Missing prompt: ${prompt}`);
   for (const schema of ['evidence-artifact.schema.json', 'evidence-index.schema.json', 'component.schema.json', 'workflow.schema.json', 'system.schema.json', 'manifest.schema.json', 'audit-page.schema.json', 'audit-index.schema.json', 'update-plan.schema.json']) {
     try { validateJsonFile(assetFile('schemas', schema)); } catch (e) { errors.push(e.message); }
   }
@@ -214,41 +332,114 @@ function validateGenerated() {
   return true;
 }
 
-function doDiscover(scope = '.') {
+async function doDiscover(scope = '.', progressLabel = '') {
   updateStage('discover', 'running', { scope });
-  runCommandCode('discover', renderPrompt('discover.md', { SCOPE: scope }), scope);
+  await runCommandCode('discover', renderPrompt('discover.md', { SCOPE: scope }), scope, progressLabel);
   validateJsonFile(evidenceIndexPath, ['schemaVersion', 'artifacts']);
   updateStage('discover', 'completed', { scope });
 }
-function doAnalyze(scope = 'all current evidence') {
+async function doAnalyze(scope = 'all current evidence', progressLabel = '') {
   if (!fs.existsSync(evidenceIndexPath)) fail('Run discover first.');
   updateStage('analyze', 'running', { scope });
-  runCommandCode('analyze', renderPrompt('analyze.md', { SCOPE: scope }), scope);
+  await runCommandCode('analyze', renderPrompt('analyze.md', { SCOPE: scope }), scope, progressLabel);
   validateJsonFile(systemPath, ['schemaVersion', 'components', 'relationships', 'workflows', 'unknowns']);
   updateStage('analyze', 'completed', { scope });
 }
-function doPlan() {
+async function doPlan(progressLabel = '') {
   if (!fs.existsSync(systemPath)) fail('Run analyze first.');
   updateStage('plan', 'running');
-  runCommandCode('plan', renderPrompt('plan.md'));
+  await runCommandCode('plan', renderPrompt('plan.md'), '', progressLabel);
   const manifest = validateJsonFile(manifestPath, ['schemaVersion', 'pages']);
   updateStage('plan', 'completed', { pageCount: manifest.pages.length });
 }
-function doGenerate(id) {
+async function doGenerate(id, progressLabel = '', allowEnrich = true) {
   const page = findPage(id);
-  runCommandCode('generate', renderPrompt('generate.md', { PAGE_JSON: JSON.stringify(page, null, 2) }), id);
+  await runCommandCode('generate', renderPrompt('generate.md', { PAGE_JSON: JSON.stringify(page, null, 2) }), id, progressLabel);
   validatePageFile(page);
+  if (allowEnrich && qualityConfig().autoEnrich !== false && isComprehensive()) await doEnrich(id, progressLabel);
 }
-function doGenerateAll() {
-  const manifest = loadManifest();
-  updateStage('generate', 'running', { pageCount: manifest.pages.length });
-  for (const page of manifest.pages) doGenerate(page.id);
-  updateStage('generate', 'completed', { pageCount: manifest.pages.length });
+function pageQualityReport(page) {
+  const file = path.join(root, page.path);
+  const text = fs.readFileSync(file, 'utf8');
+  const q = qualityConfig();
+  const words = pageWordCount(text);
+  const headings = headingNames(text);
+  const normalized = headings.map(normalizeHeading);
+  const requiredSections = page.requiredSections ?? [];
+  const missingSections = requiredSections.filter((s) => !normalized.some((h) => h.includes(normalizeHeading(s)) || normalizeHeading(s).includes(h)));
+  const diagramIntents = page.diagramIntents ?? [];
+  const mermaidCount = (text.match(/```mermaid\b/g) ?? []).length;
+  const minWords = q.minWordsByType?.[page.type] ?? 0;
+  const errors = [];
+  if (minWords && words < minWords) errors.push(`word count ${words} is below ${minWords} for ${page.type}`);
+  if ((q.minHeadings ?? 0) && headings.length < q.minHeadings) errors.push(`heading count ${headings.length} is below ${q.minHeadings}`);
+  if (q.requireDeclaredSections !== false && missingSections.length) errors.push(`missing required sections: ${missingSections.join(', ')}`);
+  if (q.requirePlannedDiagrams !== false && diagramIntents.length && mermaidCount < 1) errors.push(`manifest declares diagram intents but no Mermaid diagram exists`);
+  return { pageId: page.id, pagePath: page.path, type: page.type, words, headings: headings.length, minWords, requiredSections, missingSections, diagramIntents, mermaidCount, errors };
 }
-function doAudit(id) {
+function validatePageQuality(page, hard = true) {
+  const report = pageQualityReport(page);
+  if (report.errors.length) {
+    const message = `${page.path} quality gate failed:\n- ${report.errors.join('\n- ')}`;
+    if (hard) throw new Error(message); else console.warn(`WARNING: ${message}`);
+  }
+  return report;
+}
+async function doEnrich(id, progressLabel = '') {
   const page = findPage(id);
   if (!fs.existsSync(path.join(root, page.path))) fail(`Generate page first: ${page.path}`);
-  runCommandCode('audit', renderPrompt('audit.md', { PAGE_JSON: JSON.stringify(page, null, 2), PAGE_ID: page.id }), id);
+  await runCommandCode('enrich', renderPrompt('enrich.md', { PAGE_JSON: JSON.stringify(page, null, 2) }), id, progressLabel);
+  validatePageFile(page);
+  validatePageQuality(page, false);
+}
+async function doEnrichAll() {
+  const manifest = loadManifest();
+  for (let i = 0; i < manifest.pages.length; i++) {
+    const page = manifest.pages[i]; printItemProgress('enrich', i + 1, manifest.pages.length, page.id);
+    await doEnrich(page.id, `page ${i + 1}/${manifest.pages.length}`);
+  }
+}
+function writeQualitySummary() {
+  if (!fs.existsSync(manifestPath)) return null;
+  const manifest = loadManifest();
+  const pages = [];
+  for (const page of manifest.pages) if (fs.existsSync(path.join(root, page.path))) pages.push(pageQualityReport(page));
+  const audit = fs.existsSync(auditIndexPath) ? readJson(auditIndexPath) : { summary: {} };
+  const summary = {
+    schemaVersion: '1.0', generatedAt: now(), qualityProfile: qualityProfile(),
+    pages, localGateFailures: pages.filter((p) => p.errors.length).length,
+    auditSummary: audit.summary ?? {}
+  };
+  writeJson(path.join(root, '.docgen', 'audit', 'quality-summary.json'), summary);
+  return summary;
+}
+function doQuality() {
+  const summary = writeQualitySummary();
+  if (!summary) fail('Missing manifest. Run plan first.');
+  for (const p of summary.pages) {
+    const mark = p.errors.length ? 'FAIL' : 'PASS';
+    console.log(`${mark.padEnd(4)} ${p.pageId.padEnd(32)} ${String(p.words).padStart(5)} words | ${p.headings} headings | ${p.mermaidCount} mermaid`);
+    for (const e of p.errors) console.log(`     - ${e}`);
+  }
+  const q = qualityConfig(); const a = summary.auditSummary;
+  const failed = summary.localGateFailures > 0 || (a.critical ?? 0) > (q.maxCriticalFindings ?? 0) || (a.high ?? 0) > (q.maxHighFindings ?? 0);
+  console.log(`Quality profile: ${summary.qualityProfile}`);
+  console.log(`Local gate failures: ${summary.localGateFailures}`);
+  console.log(`Audit findings: ${JSON.stringify(a)}`);
+  console.log(`Quality gate: ${failed ? 'FAIL' : 'PASS'}`);
+  if (failed) process.exitCode = 1;
+}
+
+async function doGenerateAll() {
+  const manifest = loadManifest();
+  updateStage('generate', 'running', { pageCount: manifest.pages.length });
+  for (let i = 0; i < manifest.pages.length; i++) { const page = manifest.pages[i]; printItemProgress('generate', i + 1, manifest.pages.length, page.id); await doGenerate(page.id, `page ${i + 1}/${manifest.pages.length}`); }
+  updateStage('generate', 'completed', { pageCount: manifest.pages.length });
+}
+async function doAudit(id, progressLabel = '') {
+  const page = findPage(id);
+  if (!fs.existsSync(path.join(root, page.path))) fail(`Generate page first: ${page.path}`);
+  await runCommandCode('audit', renderPrompt('audit.md', { PAGE_JSON: JSON.stringify(page, null, 2), PAGE_ID: page.id }), id, progressLabel);
   validateJsonFile(path.join(root, '.docgen', 'audit', 'pages', `${id}.json`), ['schemaVersion', 'pageId', 'pagePath', 'findings']);
 }
 function rebuildAuditIndex() {
@@ -266,28 +457,31 @@ function rebuildAuditIndex() {
   writeJson(auditIndexPath, { schemaVersion: '1.0', generatedAt: now(), pages, summary: counts });
   return counts;
 }
-function doAuditAll() {
+async function doAuditAll() {
   const manifest = loadManifest();
   updateStage('audit', 'running', { pageCount: manifest.pages.length });
-  for (const page of manifest.pages) doAudit(page.id);
+  for (let i = 0; i < manifest.pages.length; i++) { const page = manifest.pages[i]; printItemProgress('audit', i + 1, manifest.pages.length, page.id); await doAudit(page.id, `page ${i + 1}/${manifest.pages.length}`); }
   const summary = rebuildAuditIndex();
   updateStage('audit', 'completed', { pageCount: manifest.pages.length, findings: summary });
 }
-function doFix(id) {
+async function doFix(id, progressLabel = '') {
   const page = findPage(id);
   const audit = path.join(root, '.docgen', 'audit', 'pages', `${id}.json`);
   if (!fs.existsSync(audit)) fail(`Missing audit for ${id}. Run audit first.`);
-  runCommandCode('fix', renderPrompt('fix.md', { PAGE_JSON: JSON.stringify(page, null, 2), PAGE_ID: id }), id);
+  await runCommandCode('fix', renderPrompt('fix.md', { PAGE_JSON: JSON.stringify(page, null, 2), PAGE_ID: id }), id, progressLabel);
   validatePageFile(page);
+  if (isComprehensive()) validatePageQuality(page, false);
 }
-function doFixAll() {
+async function doFixAll() {
   const manifest = loadManifest();
+  const fixed = [];
   for (const page of manifest.pages) {
     const audit = path.join(root, '.docgen', 'audit', 'pages', `${page.id}.json`);
     if (!fs.existsSync(audit)) continue;
     const report = readJson(audit);
-    if ((report.findings ?? []).length) doFix(page.id);
+    if ((report.findings ?? []).length) { printItemProgress('fix', manifest.pages.indexOf(page) + 1, manifest.pages.length, page.id); await doFix(page.id, `page ${manifest.pages.indexOf(page) + 1}/${manifest.pages.length}`); fixed.push(page.id); }
   }
+  return fixed;
 }
 
 function ignored(relPath, config) {
@@ -327,18 +521,18 @@ function changedPaths() {
   const all = new Set([...Object.keys(previous.files ?? {}), ...Object.keys(current.files)]);
   return [...all].filter((p) => previous.files?.[p]?.sha256 !== current.files?.[p]?.sha256).sort();
 }
-function doUpdate(explicitPaths) {
+async function doUpdate(explicitPaths) {
   const changed = explicitPaths.length ? explicitPaths : changedPaths();
   if (!changed.length) { console.log('No source changes detected since the last snapshot.'); return; }
-  runCommandCode('update-impact', renderPrompt('update-impact.md', { CHANGED_PATHS_JSON: JSON.stringify(changed, null, 2) }), changed.join(', '));
+  await runCommandCode('update-impact', renderPrompt('update-impact.md', { CHANGED_PATHS_JSON: JSON.stringify(changed, null, 2) }), changed.join(', '));
   const plan = validateJsonFile(path.join(root, '.docgen', 'plan', 'update-plan.json'), ['changedPaths', 'affectedEvidenceScopes', 'affectedModels', 'affectedPageIds']);
   const scopes = plan.affectedEvidenceScopes?.length ? plan.affectedEvidenceScopes : changed;
-  for (const scope of scopes) doDiscover(scope);
-  doAnalyze(`incremental changes: ${changed.join(', ')}`);
-  doPlan();
+  for (const scope of scopes) await doDiscover(scope);
+  await doAnalyze(`incremental changes: ${changed.join(', ')}`);
+  await doPlan();
   for (const id of plan.affectedPageIds ?? []) {
     const currentManifest = loadManifest();
-    if (currentManifest.pages.some((p) => p.id === id)) { doGenerate(id); doAudit(id); }
+    if (currentManifest.pages.some((p) => p.id === id)) { await doGenerate(id); await doAudit(id); }
   }
   rebuildAuditIndex();
   doSnapshot();
@@ -391,7 +585,7 @@ function compatibilityReport() {
 
   const help = runCaptured(bin, ['--help']);
   const helpText = `${help.stdout ?? ''}${help.stderr ?? ''}`;
-  const requiredFlags = ['--trust', '--print', '--max-turns', '--yolo', '--skip-onboarding'];
+  const requiredFlags = ['--trust', '--print', '--max-turns', '--yolo', '--skip-onboarding', '--verbose'];
   const missingFlags = requiredFlags.filter((flag) => !helpText.includes(flag));
   report.checks.requiredFlags = { ok: help.status === 0 && missingFlags.length === 0, requiredFlags, missingFlags };
   if (!report.checks.requiredFlags.ok) report.compatible = false;
@@ -426,7 +620,7 @@ function compatibilityReport() {
   if (!authenticated) report.warnings.push('Command Code is not authenticated or status could not confirm authentication. Run `cmd login` before generation.');
 
   report.effectiveHeadlessArgs = Object.fromEntries(
-    ['discover', 'analyze', 'plan', 'generate', 'audit', 'fix', 'update-impact'].map((stage) => [stage, commandCodeArgs(stage)])
+    ['discover', 'analyze', 'plan', 'generate', 'enrich', 'audit', 'fix', 'update-impact'].map((stage) => [stage, commandCodeArgs(stage)])
   );
   writeJson(path.join(root, '.docgen', 'state', 'compatibility.json'), report);
   return report;
@@ -524,9 +718,11 @@ Project commands:
   docgen discover [scope]
   docgen analyze [scope]
   docgen plan
-  docgen generate <id|--all>
+  docgen generate <id|--all>    generate pages; comprehensive profile auto-enriches
+  docgen enrich <id|--all>      run explicit depth/completeness pass
   docgen audit <id|--all>
   docgen fix <id|--all>
+  docgen quality                run local + audit quality gates
   docgen snapshot
   docgen changed
   docgen update [path ...]
@@ -557,15 +753,37 @@ switch (command) {
   case 'compat': doctor(); break;
   case 'status': status(); break;
   case 'validate': if (!validateStatic() || !validateGenerated()) process.exit(1); break;
-  case 'discover': doDiscover(args.join(' ') || '.'); break;
-  case 'analyze': doAnalyze(args.join(' ') || 'all current evidence'); break;
-  case 'plan': doPlan(); break;
-  case 'generate': if (args[0] === '--all') doGenerateAll(); else if (args[0]) doGenerate(args[0]); else fail('generate requires <page-id|--all>'); break;
-  case 'audit': if (args[0] === '--all') doAuditAll(); else if (args[0]) { doAudit(args[0]); rebuildAuditIndex(); } else fail('audit requires <page-id|--all>'); break;
-  case 'fix': if (args[0] === '--all') doFixAll(); else if (args[0]) doFix(args[0]); else fail('fix requires <page-id|--all>'); break;
+  case 'discover': await doDiscover(args.join(' ') || '.'); break;
+  case 'analyze': await doAnalyze(args.join(' ') || 'all current evidence'); break;
+  case 'plan': await doPlan(); break;
+  case 'generate': if (args[0] === '--all') await doGenerateAll(); else if (args[0]) await doGenerate(args[0]); else fail('generate requires <page-id|--all>'); break;
+  case 'enrich': if (args[0] === '--all') await doEnrichAll(); else if (args[0]) await doEnrich(args[0]); else fail('enrich requires <page-id|--all>'); break;
+  case 'audit': if (args[0] === '--all') await doAuditAll(); else if (args[0]) { await doAudit(args[0]); rebuildAuditIndex(); writeQualitySummary(); } else fail('audit requires <page-id|--all>'); break;
+  case 'fix': if (args[0] === '--all') await doFixAll(); else if (args[0]) await doFix(args[0]); else fail('fix requires <page-id|--all>'); break;
+  case 'quality': doQuality(); break;
   case 'snapshot': doSnapshot(); break;
   case 'changed': console.log(changedPaths().join('\n')); break;
-  case 'update': doUpdate(args); break;
-  case 'all': doDiscover('.'); doAnalyze('all current evidence'); doPlan(); doGenerateAll(); doAuditAll(); doSnapshot(); break;
+  case 'update': await doUpdate(args); break;
+  case 'all': {
+    console.log(`DocGen full pipeline | quality profile: ${qualityProfile()}`);
+    printItemProgress('phase', 1, 6, 'discovery'); await doDiscover('.', 'phase 1/6');
+    printItemProgress('phase', 2, 6, 'architecture analysis'); await doAnalyze('all current evidence', 'phase 2/6');
+    printItemProgress('phase', 3, 6, 'documentation planning'); await doPlan('phase 3/6');
+    const manifest = loadManifest(); console.log(`Plan contains ${manifest.pages.length} pages.`);
+    printItemProgress('phase', 4, 6, 'page generation + enrichment'); await doGenerateAll();
+    printItemProgress('phase', 5, 6, 'independent audit'); await doAuditAll();
+    if (isComprehensive() && qualityConfig().autoFix !== false) {
+      console.log('Phase 5b/6 — automatic repair of audit findings');
+      const fixed = await doFixAll();
+      if (fixed.length && qualityConfig().reAuditAfterFix !== false) {
+        console.log(`Re-auditing ${fixed.length} repaired page(s)...`);
+        for (let i = 0; i < fixed.length; i++) { printItemProgress('re-audit', i + 1, fixed.length, fixed[i]); await doAudit(fixed[i], `re-audit ${i + 1}/${fixed.length}`); }
+        rebuildAuditIndex();
+      }
+    }
+    printItemProgress('phase', 6, 6, 'quality summary + source snapshot');
+    writeQualitySummary(); doSnapshot(); doQuality();
+    break;
+  }
   default: usage(); process.exit(2);
 }

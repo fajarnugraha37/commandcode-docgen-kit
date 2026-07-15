@@ -25,7 +25,11 @@
           "type",
           "purpose",
           "evidence",
-          "models"
+          "models",
+          "audience",
+          "requiredSections",
+          "diagramIntents",
+          "relatedPages"
         ],
         "properties": {
           "id": {
@@ -57,6 +61,38 @@
           },
           "models": {
             "type": "array"
+          },
+          "audience": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "requiredSections": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "diagramIntents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "relatedPages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "qualityHints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       }

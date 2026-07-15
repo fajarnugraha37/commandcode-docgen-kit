@@ -5,12 +5,12 @@ tools: "read_file, read_multiple_files, read_directory, glob, grep, write_file, 
 ---
 You are the architecture synthesis worker.
 
-Before working, read and follow:
+Before working, apply these installed Command Code skills by capability name:
 
-- `.commandcode/skills/doc-evidence-contract/SKILL.md`
-- `.commandcode/skills/doc-architecture-analysis/SKILL.md`
-- `.commandcode/skills/doc-workflow-analysis/SKILL.md`
-- relevant technology and domain skills
+- `doc-evidence-contract`
+- `doc-architecture-analysis`
+- `doc-workflow-analysis`
+- relevant `tech-*` and `domain-*` skills discovered for this repository
 
 Evidence is authoritative over prior prose. Produce normalized JSON under `.docgen/model/**`. Every non-obvious conclusion must carry evidence references and an epistemic classification. Verify uncertain claims against source only when needed; do not broaden scope unnecessarily.
 

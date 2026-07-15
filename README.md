@@ -38,6 +38,23 @@ Install the engine once. Initialize any number of repositories independently.
 
 ---
 
+## What's new in v0.3.0
+
+- live asynchronous Command Code process monitoring instead of silent blocking execution;
+- phase and page progress bars;
+- configurable heartbeat and no-output warnings;
+- per-run stdout/stderr log files and richer run metadata;
+- explicit classification for authentication, permission, rate-limit, network, API 5xx, max-turn, and interruption failures;
+- default `comprehensive` quality profile;
+- coverage-driven manifest contracts with required sections, diagram intents, audiences, related pages, and quality hints;
+- automatic page enrichment after first-pass generation;
+- automatic audit repair and re-audit in the full pipeline;
+- local anti-shallowness and audit severity quality gates via `docgen quality`;
+- fixed global-first agent instructions so skills are referenced by installed capability name rather than an incorrect project-local `.commandcode/skills/**` path;
+- self-contained project-local mode now uses the same v0.3.0 engine as global mode.
+
+---
+
 ## Table of contents
 
 1. [What DocGen is](#what-docgen-is)
@@ -47,7 +64,9 @@ Install the engine once. Initialize any number of repositories independently.
 5. [Install globally](#install-globally)
 6. [Initialize a repository](#initialize-a-repository)
 7. [Quick start](#quick-start)
-8. [How it works](#how-it-works)
+8. [Live progress, heartbeat, logs, and error visibility](#live-progress-heartbeat-logs-and-error-visibility)
+9. [Comprehensive quality profile](#comprehensive-quality-profile)
+10. [How it works](#how-it-works)
 9. [Execution flow](#execution-flow)
 10. [State machine](#state-machine)
 11. [Global versus project-local files](#global-versus-project-local-files)
@@ -131,7 +150,7 @@ DocGen does not require a particular renderer.
 
 Earlier versions of the kit copied the entire engine into every target repository. That model is useful for a fully self-contained team-owned repository, but it is inefficient when one user wants to use the same documentation system across many repositories.
 
-The default architecture in v0.2.0 is therefore:
+The default architecture in v0.3.0 is therefore:
 
 ```text
 install once globally
@@ -187,10 +206,10 @@ The kit currently provides:
 
 - **5 specialized custom agents**
 - **22 reusable skills**
-- **10 global slash commands**
+- **12 global slash commands**
 - **conditional global hooks**
 - **9 JSON artifact schemas**
-- **7 bounded stage prompts**
+- **8 bounded stage prompts**
 - **a global cross-platform Node.js orchestrator**
 - **per-repository state and configuration**
 - **runtime compatibility diagnostics**
@@ -269,10 +288,10 @@ Extract the release ZIP first.
 
 ```powershell
 Expand-Archive `
-  .\commandcode-docgen-kit-0.2.0.zip `
+  .\commandcode-docgen-kit-0.3.0.zip `
   -DestinationPath .\commandcode-docgen-kit
 
-cd .\commandcode-docgen-kit\commandcode-docgen-kit-0.2.0
+cd .\commandcode-docgen-kit\commandcode-docgen-kit-0.3.0
 
 .\install.ps1
 ```
@@ -280,8 +299,8 @@ cd .\commandcode-docgen-kit\commandcode-docgen-kit-0.2.0
 ## macOS / Linux
 
 ```bash
-unzip commandcode-docgen-kit-0.2.0.zip
-cd commandcode-docgen-kit-0.2.0
+unzip commandcode-docgen-kit-0.3.0.zip
+cd commandcode-docgen-kit-0.3.0
 ./install.sh
 ```
 
@@ -494,6 +513,335 @@ docgen plan
 docgen generate --all
 docgen audit --all
 docgen snapshot
+```
+
+---
+
+# Live progress, heartbeat, logs, and error visibility
+
+DocGen v0.3.0 does not run Command Code as a silent blocking child process. Every LLM-backed stage is monitored as a live asynchronous process.
+
+A run now looks like:
+
+```text
+Phase 1/6 — discovery
+
+==> discover: . | phase 1/6
+    cmdc -p --trust --skip-onboarding --yolo --max-turns 30 --verbose
+    logs: .docgen/runs/<run>.stdout.log | .docgen/runs/<run>.stderr.log
+
+session: <command-code-session-id>
+
+[docgen] discover:. RUNNING | elapsed 0m 10s | pid 18420 | changed artifacts 2
+[docgen] discover:. RUNNING | elapsed 0m 20s | pid 18420 | changed artifacts 5
+...
+[docgen] discover:. COMPLETED | 2m 14s | exit 0 (success)
+```
+
+For page collections, DocGen also prints page-level progress:
+
+```text
+[========................]  33% generate 4/12 — quote-lifecycle
+```
+
+## What the heartbeat means
+
+Command Code headless mode may remain quiet while the model is reasoning or executing tools. DocGen therefore prints a heartbeat even when Command Code has not emitted new stdout/stderr.
+
+The heartbeat reports:
+
+- current stage and target;
+- elapsed time;
+- child process PID;
+- number of `.docgen/**` or `docs/**` artifacts changed since the run started;
+- how long the Command Code process has been quiet.
+
+A quiet heartbeat is **not** treated as failure. It means the process is still alive.
+
+Default configuration:
+
+```json
+{
+  "progress": {
+    "heartbeatSeconds": 10,
+    "noOutputWarningSeconds": 45,
+    "showCommandOutput": true,
+    "verboseCommandCode": true
+  }
+}
+```
+
+You can make the heartbeat more frequent:
+
+```json
+{
+  "progress": {
+    "heartbeatSeconds": 5
+  }
+}
+```
+
+## Per-run logs
+
+Every LLM-backed run writes three files under `.docgen/runs/`:
+
+```text
+<run-id>.json
+<run-id>.stdout.log
+<run-id>.stderr.log
+```
+
+The metadata JSON records:
+
+- stage;
+- target;
+- start and finish timestamps;
+- elapsed duration;
+- PID;
+- exact Command Code arguments;
+- exit code;
+- signal when interrupted;
+- normalized error classification;
+- stdout/stderr log paths.
+
+This means a failed run is diagnosable after the terminal session ends.
+
+## API and runtime error classification
+
+DocGen maps Command Code's documented headless exit codes into explicit categories:
+
+| Exit | Classification | Meaning |
+|---:|---|---|
+| `0` | `success` | completed |
+| `1` | `general-error` | generic Command Code failure |
+| `3` | `not-authenticated` | login required |
+| `4` | `permission-denied` | permission/hook denial |
+| `5` | `rate-limited` | provider/API rate limit |
+| `6` | `network-failure` | network/provider connectivity failure |
+| `7` | `api-server-error` | provider/API 5xx |
+| `8` | `max-turns` | configured headless turn limit reached |
+| `130` | `interrupted` | SIGINT/SIGTERM |
+
+On failure, DocGen prints the classification, a remediation hint, and the tail of stderr. Full stderr remains in `.docgen/runs/*.stderr.log`.
+
+This is especially useful for distinguishing:
+
+```text
+model is still working
+```
+
+from:
+
+```text
+provider rate limited the request
+```
+
+or:
+
+```text
+network/API server failed
+```
+
+or:
+
+```text
+Command Code reached --max-turns
+```
+
+---
+
+# Comprehensive quality profile
+
+The default v0.3.0 profile is:
+
+```json
+{
+  "quality": {
+    "profile": "comprehensive"
+  }
+}
+```
+
+The goal is not merely to produce valid Markdown. The goal is to produce a curated developer-documentation set with the depth expected from a high-quality developer portal while remaining grounded in repository evidence.
+
+No orchestration layer can guarantee frontier-model reasoning from a weak model. DocGen instead improves cheap-model reliability through decomposition, explicit contracts, deterministic quality gates, and multiple bounded passes.
+
+## Comprehensive pipeline
+
+```text
+repository
+   │
+   ▼
+discovery
+   │
+   ▼
+normalized architecture/workflow model
+   │
+   ▼
+coverage-driven documentation manifest
+   │
+   ▼
+page generation
+   │
+   ▼
+depth/completeness enrichment
+   │
+   ▼
+independent audit
+   │
+   ▼
+automatic repair when findings exist
+   │
+   ▼
+re-audit repaired pages
+   │
+   ▼
+local quality gate + audit severity gate
+```
+
+The important design choice is that a cheap model is **not** asked to understand an entire repository and produce perfect documentation in one response.
+
+## Coverage-driven planning
+
+The planner must consider whether evidence supports documentation for:
+
+- overview and architecture at a glance;
+- components/modules and ownership boundaries;
+- domain concepts and terminology;
+- important request/event/workflow/state lifecycles;
+- API, messaging, persistence, configuration, security, and external integrations;
+- local development and common engineering tasks;
+- operations, observability, failure modes, recovery, and troubleshooting.
+
+The planner must not invent a category with no evidence, but it also must not omit a material system surface simply because that surface is complex.
+
+Each manifest page now declares:
+
+```json
+{
+  "id": "quote-lifecycle",
+  "path": "docs/concepts/quote-lifecycle.md",
+  "title": "Quote Lifecycle",
+  "type": "concept",
+  "purpose": "Explain the lifecycle and invariants of a quote",
+  "audience": ["engineer", "architect"],
+  "evidence": ["..."],
+  "models": ["..."],
+  "requiredSections": [
+    "Purpose and Scope",
+    "Mental Model",
+    "Lifecycle",
+    "Invariants",
+    "Failure Behavior"
+  ],
+  "diagramIntents": ["state lifecycle", "submission sequence"],
+  "relatedPages": ["pricing", "order-conversion"],
+  "qualityHints": ["explain optimistic locking if evidenced"]
+}
+```
+
+The manifest is therefore a **content contract**, not merely a filename list.
+
+## Automatic enrichment
+
+With `quality.profile = "comprehensive"` and `quality.autoEnrich = true`, every generated page receives a second bounded writer pass.
+
+The enrichment pass looks specifically for shallow areas and strengthens supported detail such as:
+
+- mental models and scope boundaries;
+- end-to-end flows;
+- state transitions;
+- invariants and assumptions;
+- dependency and data-ownership implications;
+- failure modes and recovery behavior;
+- operational/troubleshooting guidance;
+- practical examples and decision tables;
+- planned Mermaid diagrams;
+- navigation to related pages.
+
+It preserves useful material rather than replacing the page with generic prose.
+
+## Quality gates
+
+Default local gates:
+
+```json
+{
+  "quality": {
+    "profile": "comprehensive",
+    "autoEnrich": true,
+    "autoFix": true,
+    "reAuditAfterFix": true,
+    "minWordsByType": {
+      "overview": 900,
+      "architecture": 1200,
+      "concept": 900,
+      "guide": 1000,
+      "reference": 700,
+      "operations": 1000
+    },
+    "minHeadings": 4,
+    "requireDeclaredSections": true,
+    "requirePlannedDiagrams": true,
+    "maxCriticalFindings": 0,
+    "maxHighFindings": 0
+  }
+}
+```
+
+Word counts are **minimum anti-shallowness signals**, not a target to pad prose. The writer is explicitly instructed not to add generic filler.
+
+Run the gate directly:
+
+```bash
+docgen quality
+```
+
+Example:
+
+```text
+PASS overview                           1840 words | 8 headings | 2 mermaid
+PASS quote-lifecycle                    2315 words | 11 headings | 3 mermaid
+PASS configuration-reference           1460 words | 9 headings | 0 mermaid
+
+Quality profile: comprehensive
+Local gate failures: 0
+Audit findings: {"critical":0,"high":0,"medium":2,"low":3}
+Quality gate: PASS
+```
+
+The machine-readable summary is written to:
+
+```text
+.docgen/audit/quality-summary.json
+```
+
+## `docgen all` in comprehensive mode
+
+The full pipeline now performs:
+
+```text
+Phase 1/6  discover
+Phase 2/6  analyze
+Phase 3/6  plan
+Phase 4/6  generate + enrich each page
+Phase 5/6  audit all pages
+           fix pages with findings
+           re-audit repaired pages
+Phase 6/6  quality summary + source snapshot
+```
+
+For faster or cheaper operation, set another profile and disable automatic passes:
+
+```json
+{
+  "quality": {
+    "profile": "balanced",
+    "autoEnrich": false,
+    "autoFix": false,
+    "reAuditAfterFix": false
+  }
+}
 ```
 
 ---
@@ -1153,6 +1501,40 @@ Generate all pages in manifest order, each in a separate bounded Command Code ru
 ```bash
 docgen generate --all
 ```
+
+
+## `docgen enrich <page-id>`
+
+Run the explicit depth-and-completeness pass for one existing generated page.
+
+```bash
+docgen enrich quote-lifecycle
+```
+
+This is normally automatic when the `comprehensive` quality profile is active.
+
+## `docgen enrich --all`
+
+Run the enrichment pass for every manifest page.
+
+```bash
+docgen enrich --all
+```
+
+## `docgen quality`
+
+Evaluate generated pages against local structural/depth gates and the configured audit severity thresholds.
+
+```bash
+docgen quality
+```
+
+The command also writes:
+
+```text
+.docgen/audit/quality-summary.json
+```
+
 
 ## `docgen audit <page-id>`
 
@@ -1859,18 +2241,18 @@ For a team that needs exact engine reproducibility inside the repository, use th
 
 ## Migrating from v0.1.x project-local installs
 
-Version 0.1.x installed the complete engine inside each repository. Version 0.2.0 defaults to a global engine.
+Version 0.1.x installed the complete engine inside each repository. Version 0.3.0 defaults to a global engine.
 
 Recommended migration:
 
 ```bash
-# 1. Install v0.2.0 globally once
+# 1. Install v0.3.0 globally once
 node install.mjs --force
 
 # 2. Enter an existing v0.1.x repository
 cd /path/to/repository
 
-# 3. Add the v0.2.0 project marker/template without replacing existing config
+# 3. Add the v0.3.0 project marker/template without replacing existing config
 docgen init
 
 # 4. Verify the global runtime
@@ -2047,6 +2429,39 @@ Do not mix both modes casually in the same repository because duplicate global a
 ---
 
 # Troubleshooting
+
+
+## `docgen all` appears to hang or stays quiet
+
+v0.3.0 prints a heartbeat while every Command Code child process is alive. You should see output similar to:
+
+```text
+[docgen] discover:. RUNNING | elapsed 1m 20s | pid 18420 | changed artifacts 7
+```
+
+Check the live run metadata and logs:
+
+```text
+.docgen/runs/<run-id>.json
+.docgen/runs/<run-id>.stdout.log
+.docgen/runs/<run-id>.stderr.log
+```
+
+A process that remains alive but emits no Command Code output will trigger a warning after `progress.noOutputWarningSeconds`. This warning is informational; headless model/tool execution can legitimately be quiet.
+
+To increase heartbeat frequency:
+
+```json
+{
+  "progress": {
+    "heartbeatSeconds": 5,
+    "noOutputWarningSeconds": 30
+  }
+}
+```
+
+When the child exits, DocGen reports a normalized classification such as `rate-limited`, `network-failure`, `api-server-error`, or `max-turns`.
+
 
 ## `docgen: command not found`
 
@@ -2401,7 +2816,7 @@ For a repository that requires an exact frozen engine version, use the self-cont
 
 # Compatibility notes
 
-The v0.2.0 architecture intentionally aligns with Command Code user-level and project-level extension scopes:
+The v0.3.0 architecture intentionally aligns with Command Code user-level and project-level extension scopes:
 
 ```text
 User-level reusable components:

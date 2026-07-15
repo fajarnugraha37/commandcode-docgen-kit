@@ -1,1 +1,1 @@
-Read `.docgen/state/state.json`, `.docgen/plan/manifest.json` when present, and `.docgen/audit/index.json` when present. Report the current documentation pipeline state, missing stages, generated page counts, and unresolved high-severity audit findings. Do not modify files.
+Run the project-local DocGen orchestrator command `node scripts/docgen.mjs status` and report the result.

@@ -1,23 +1,27 @@
 ---
 name: doc-claim-verification
-description: Audit documentation claims against evidence and models, classify severity, and produce actionable machine-readable findings.
+description: Independently verify documentation claims and completeness against declared evidence and normalized models.
 ---
 
-# Claim Verification
+# Claim and Completeness Verification
 
-For each material claim, ask:
+Audit independently. Treat the generated page as untrusted until evidence supports it.
 
-- Is it directly supported?
-- Is it an inference presented as a fact?
-- Is contradictory evidence present?
-- Is the claim too broad for the evidence?
-- Is it stale relative to current source?
+Check:
 
-Severity:
+- factual correctness and source support;
+- contradiction with evidence or normalized models;
+- inference presented as fact;
+- missing required sections or planned diagrams;
+- material supported behavior that is omitted or treated too shallowly;
+- missing boundaries, invariants, failure paths, state transitions, or operational implications;
+- terminology, navigation, and cross-page ownership consistency;
+- generic filler that could describe any repository;
+- diagram/text disagreement.
 
-- `critical`: materially unsafe or fundamentally wrong system behavior
-- `high`: important unsupported/incorrect architectural or operational claim
-- `medium`: misleading ambiguity, stale reference, significant inconsistency
-- `low`: terminology, navigation, minor structural issue
+Severity guidance:
 
-Findings must identify page, claim/section, evidence references, explanation, and recommended action.
+- `critical`: dangerous or materially false guidance;
+- `high`: incorrect core behavior or major required coverage missing;
+- `medium`: meaningful incompleteness, ambiguity, or weak support;
+- `low`: polish, navigation, or minor clarity issue.

@@ -83,7 +83,33 @@
       "generate": 20,
       "audit": 20,
       "fix": 20,
-      "update-impact": 20
+      "update-impact": 20,
+      "enrich": 20
     }
+  },
+  "quality": {
+    "profile": "comprehensive",
+    "autoEnrich": true,
+    "autoFix": true,
+    "reAuditAfterFix": true,
+    "minWordsByType": {
+      "overview": 900,
+      "architecture": 1200,
+      "concept": 900,
+      "guide": 1000,
+      "reference": 700,
+      "operations": 1000
+    },
+    "minHeadings": 4,
+    "requireDeclaredSections": true,
+    "requirePlannedDiagrams": true,
+    "maxCriticalFindings": 0,
+    "maxHighFindings": 0
+  },
+  "progress": {
+    "heartbeatSeconds": 10,
+    "noOutputWarningSeconds": 45,
+    "showCommandOutput": true,
+    "verboseCommandCode": true
   }
 }

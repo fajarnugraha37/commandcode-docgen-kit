@@ -1,6 +1,6 @@
 {
   "name": "commandcode-docgen-kit",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "defaultInstallationScope": "global",
   "globalComponents": [
     "agents",
@@ -25,8 +25,8 @@
   "counts": {
     "agents": 5,
     "skills": 22,
-    "commands": 10,
+    "commands": 12,
     "schemas": 9,
-    "prompts": 7
+    "prompts": 8
   }
 }

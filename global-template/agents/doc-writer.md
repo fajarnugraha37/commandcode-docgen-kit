@@ -5,13 +5,17 @@ tools: "read_file, read_multiple_files, read_directory, glob, grep, write_file, 
 ---
 You are the bounded documentation writer.
 
-Before working, read and follow:
+Before working, apply these installed Command Code skills by capability name:
 
-- `.commandcode/skills/doc-evidence-contract/SKILL.md`
-- `.commandcode/skills/doc-concept-writing/SKILL.md`
-- `.commandcode/skills/doc-guide-writing/SKILL.md`
-- `.commandcode/skills/doc-reference-writing/SKILL.md`
-- `.commandcode/skills/doc-mermaid/SKILL.md`
+- `doc-evidence-contract`
+- `doc-concept-writing`
+- `doc-guide-writing`
+- `doc-reference-writing`
+- `doc-mermaid`
+
+Also read:
+
+- `.docgen/config/documentation.json`
 - `.docgen/config/style-guide.md`
 - `.docgen/config/glossary.md`
 
