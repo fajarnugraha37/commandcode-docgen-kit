@@ -32,7 +32,7 @@ function commandArgs(config, stage) {
   if (cc.skipOnboarding !== false) args.push('--skip-onboarding');
   if (cc.yolo !== false) args.push('--yolo');
   const model = process.env.DOCGEN_MODEL || cc.stageModels?.[stage] || cc.model; if (model) args.push('--model', String(model));
-  const turns = Number(process.env.DOCGEN_MAX_TURNS || cc.maxTurns?.[stage] || cc.maxTurns?.default || 12); if (turns > 0) args.push('--max-turns', String(turns));
+  const turns = Number(process.env.DOCGEN_MAX_TURNS || cc.maxTurns?.[stage] || cc.maxTurns?.default || 30); if (turns > 0) args.push('--max-turns', String(turns));
   if (cc.verbose === true) args.push('--verbose');
   return args;
 }
