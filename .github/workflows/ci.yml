@@ -6,84 +6,48 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply-phase2:
-    runs-on: ubuntu-latest
-    outputs:
-      commit_sha: ${{ steps.commit.outputs.sha }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - name: Apply Phase 2A and Phase 2B
-        shell: bash
-        run: |
-          set -euo pipefail
-          git show b0a36a1b5dfb04c8ad86784a5a4e28a9919a0dc9:.github/workflows/ci.yml > .github/workflows/ci.yml
-          cat .github/phase2-parts/part-* | base64 -d | gzip -d > /tmp/phase2.patch
-          patch -p1 < /tmp/phase2.patch
-          rm -rf .github/phase2-parts .github/workflows/phase2-bootstrap.yml
-          git diff --check
-      - name: Validate implementation
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd global-template/docgen
-          npm run check
-          DOCGEN_PROGRESS=0 npm test
-          cd ../..
-          node install.mjs --dry-run --no-link-cli
-          node - <<'NODE'
-          const fs = require('fs');
-          const path = require('path');
-          for (const name of fs.readdirSync('global-template/docgen/schemas')) {
-            if (name.endsWith('.json')) JSON.parse(fs.readFileSync(path.join('global-template/docgen/schemas', name), 'utf8'));
-          }
-          console.log('schemas ok');
-          NODE
-      - name: Publish validated source commit
-        id: commit
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add global-template/docgen
-          git commit -m "feat: stabilize runtime and add stack-neutral quality gates"
-          git push origin "HEAD:agent/phase2-validated-output"
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-  validate-final:
-    needs: apply-phase2
+  test:
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             node-version: 22
+            upload-source: false
           - os: ubuntu-latest
             node-version: 24
+            upload-source: true
           - os: windows-latest
             node-version: 24
+            upload-source: false
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.apply-phase2.outputs.commit_sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: global-template/docgen/package.json
       - name: Syntax check
         working-directory: global-template/docgen
         run: npm run check
-      - name: Full unit and integration suite
+      - name: Unit and integration tests
         working-directory: global-template/docgen
         run: npm test
       - name: Installer dry run
         run: node install.mjs --dry-run --no-link-cli
+      - name: Upload exact CI source
+        if: always() && matrix.upload-source
+        uses: actions/upload-artifact@v4
+        with:
+          name: docgen-ci-source
+          if-no-files-found: error
+          retention-days: 3
+          path: |
+            global-template/docgen
+            global-template/docgen/project-template
+            install.mjs
+            VERSION
