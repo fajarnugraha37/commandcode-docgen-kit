@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: ['main', 'agent/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: global-template/docgen/package.json
+      - name: Syntax check
+        working-directory: global-template/docgen
+        run: npm run check
+      - name: Unit and integration tests
+        working-directory: global-template/docgen
+        run: npm test
+      - name: Installer dry run
+        run: node install.mjs --dry-run --no-link-cli
