@@ -11,6 +11,7 @@ import { projectPaths, writeJson } from '../lib/core.mjs';
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const engineRoot = path.resolve(testDir, '..');
 const repositoryRoot = path.resolve(engineRoot, '..', '..');
+const misspelledBoolean = ['Bole', 'an'].join('');
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'docgen-git-inventory-'));
@@ -66,12 +67,14 @@ test('installed launcher indexes a real Git repository', () => {
     encoding: 'utf8',
     env: { ...process.env, DOCGEN_PROGRESS: '0' }
   });
+  const combinedOutput = `${run.stdout}\n${run.stderr}`;
   assert.equal(run.status, 0, `INDEX STDERR:\n${run.stderr}\nINDEX STDOUT:\n${run.stdout}`);
-  assert.doesNotMatch(`${run.stdout}\n${run.stderr}`, /Bolean is not defined/);
+  assert(!combinedOutput.includes(`${misspelledBoolean} is not defined`));
   assert(fs.existsSync(path.join(root, '.docgen', 'index', 'semantic.db')));
 });
 
 test('shipped JavaScript contains no misspelled Boolean global', () => {
+  const pattern = new RegExp(`\\b${misspelledBoolean}\\b`);
   const stack = [engineRoot];
   const offenders = [];
   while (stack.length) {
@@ -80,7 +83,7 @@ test('shipped JavaScript contains no misspelled Boolean global', () => {
       if (['node_modules', '.git'].includes(entry.name)) continue;
       const file = path.join(dir, entry.name);
       if (entry.isDirectory()) stack.push(file);
-      else if (/\.(?:mjs|js|cjs)$/.test(entry.name) && /\bBolean\b/.test(fs.readFileSync(file, 'utf8'))) {
+      else if (/\.(?:mjs|js|cjs)$/.test(entry.name) && pattern.test(fs.readFileSync(file, 'utf8'))) {
         offenders.push(path.relative(engineRoot, file));
       }
     }
