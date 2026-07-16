@@ -17,12 +17,12 @@
       "audit": ""
     },
     "maxTurns": {
-      "default": 12,
-      "modelCore": 16,
-      "modelEnterprise": 16,
-      "plan": 12,
-      "generate": 12,
-      "audit": 10
+      "default": 30,
+      "modelCore": 30,
+      "modelEnterprise": 30,
+      "plan": 30,
+      "generate": 30,
+      "audit": 30
     }
   },
   "budget": {
