@@ -103,3 +103,13 @@ Run `docgen publish` to rebuild these assets without an LLM call.
 ## Binary and non-text token boundary
 
 Known images, audio/video, PDFs and office documents, archives, compiled artifacts, fonts, database files, keystores, invalid UTF-8, NUL-containing files, and oversized text are excluded from the canonical source inventory. The exclusion applies to reads, grep, fingerprints, change detection, freshness, and evidence validation. Configure the boundary under `ignore.binary` in `config/documentation.json`.
+
+## Multi-repository P3
+
+This repository can be registered into a parent system workspace with:
+
+```bash
+docgen workspace add /path/to/this-repository
+```
+
+P3 consumes this repository's validated `.docgen/model/**`, catalogs, ownership, traceability, source fingerprint, and commit metadata. It does not blindly rescan ignored or binary source files.

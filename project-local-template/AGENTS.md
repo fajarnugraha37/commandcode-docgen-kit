@@ -60,3 +60,7 @@ During DocGen workflows, repository source access must follow `.docgen/state/sou
 ## P1 Enterprise Depth
 
 When supported by evidence, build typed models for security, operations, testing, data governance, decisions, configuration, change impact, and ownership. Keep policy, business semantics, implementation behavior, operational guarantees, and inferred rationale epistemically distinct. Do not invent SLOs, permissions, owners, retention periods, recovery guarantees, or architectural rationale.
+
+## P3 system-of-systems workspace
+
+For multi-repository documentation, use `docgen workspace ...` from a parent workspace. Workspace analysis must consume validated `.docgen/model/**` artifacts from member repositories rather than bypassing repository ignore, binary, traceability, and contract boundaries. Cross-repository relationships require explicit contract/dependency evidence. All system diagrams use Mermaid.

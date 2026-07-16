@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "pass",
+    "metrics",
+    "errors",
+    "warnings"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string"
+    },
+    "pass": {
+      "type": "boolean"
+    },
+    "metrics": {
+      "type": "object"
+    },
+    "errors": {
+      "type": "array"
+    },
+    "warnings": {
+      "type": "array"
+    }
+  },
+  "additionalProperties": true
+}

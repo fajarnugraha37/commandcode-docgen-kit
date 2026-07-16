@@ -1365,12 +1365,12 @@ function validateStatic() {
     try { validateJsonFile(f); } catch (e) { errors.push(e.message); }
   }
   validateSkills(errors);
-  const requiredAgents = ['doc-discoverer', 'doc-architect', 'doc-domain-analyst', 'doc-enterprise-analyst', 'doc-planner', 'doc-writer', 'doc-auditor'];
+  const requiredAgents = ['doc-discoverer', 'doc-architect', 'doc-domain-analyst', 'doc-enterprise-analyst', 'doc-system-analyst', 'doc-planner', 'doc-writer', 'doc-auditor'];
   for (const a of requiredAgents) if (!fs.existsSync(path.join(commandCodeHome, 'agents', `${a}.md`))) errors.push(`Missing global agent: ${a}`);
-  const requiredCommands = ['docgen-init', 'docgen-doctor', 'docgen-discover', 'docgen-analyze', 'docgen-plan', 'docgen-generate', 'docgen-audit', 'docgen-fix', 'docgen-update', 'docgen-status', 'docgen-enrich', 'docgen-quality', 'docgen-semantics', 'docgen-preflight', 'docgen-resume', 'docgen-contract-test', 'docgen-traceability', 'docgen-enterprise', 'docgen-ignore', 'docgen-publish'];
+  const requiredCommands = ['docgen-init', 'docgen-doctor', 'docgen-discover', 'docgen-analyze', 'docgen-plan', 'docgen-generate', 'docgen-audit', 'docgen-fix', 'docgen-update', 'docgen-status', 'docgen-enrich', 'docgen-quality', 'docgen-semantics', 'docgen-preflight', 'docgen-resume', 'docgen-contract-test', 'docgen-traceability', 'docgen-enterprise', 'docgen-ignore', 'docgen-publish', 'docgen-workspace'];
   for (const c of requiredCommands) if (!fs.existsSync(path.join(commandCodeHome, 'commands', `${c}.md`))) errors.push(`Missing global command: ${c}`);
-  for (const prompt of ['discover.md', 'analyze.md', 'semantics.md', 'enterprise.md', 'plan.md', 'generate.md', 'enrich.md', 'audit.md', 'fix.md', 'update-impact.md', 'generate-batch.md', 'enrich-batch.md', 'audit-batch.md']) if (!fs.existsSync(assetFile('prompts', prompt))) errors.push(`Missing prompt: ${prompt}`);
-  for (const schema of ['evidence-artifact.schema.json', 'evidence-index.schema.json', 'component.schema.json', 'workflow.schema.json', 'system.schema.json', 'business.schema.json', 'flows.schema.json', 'catalogs.schema.json', 'manifest.schema.json', 'audit-page.schema.json', 'audit-index.schema.json', 'update-plan.schema.json', 'semantic-item.schema.json', 'traceability.schema.json', 'quality-summary.schema.json', 'security.schema.json', 'operations.schema.json', 'testing.schema.json', 'data-governance.schema.json', 'decisions.schema.json', 'configuration.schema.json', 'change-impact.schema.json', 'ownership.schema.json', 'publishing-index.schema.json']) {
+  for (const prompt of ['discover.md', 'analyze.md', 'semantics.md', 'enterprise.md', 'plan.md', 'generate.md', 'enrich.md', 'audit.md', 'fix.md', 'update-impact.md', 'generate-batch.md', 'enrich-batch.md', 'audit-batch.md', 'workspace-synthesis.md']) if (!fs.existsSync(assetFile('prompts', prompt))) errors.push(`Missing prompt: ${prompt}`);
+  for (const schema of ['evidence-artifact.schema.json', 'evidence-index.schema.json', 'component.schema.json', 'workflow.schema.json', 'system.schema.json', 'business.schema.json', 'flows.schema.json', 'catalogs.schema.json', 'manifest.schema.json', 'audit-page.schema.json', 'audit-index.schema.json', 'update-plan.schema.json', 'semantic-item.schema.json', 'traceability.schema.json', 'quality-summary.schema.json', 'security.schema.json', 'operations.schema.json', 'testing.schema.json', 'data-governance.schema.json', 'decisions.schema.json', 'configuration.schema.json', 'change-impact.schema.json', 'ownership.schema.json', 'publishing-index.schema.json', 'workspace.schema.json', 'workspace-repositories.schema.json', 'system-map.schema.json', 'dependency-graph.schema.json', 'contract-registry.schema.json', 'capability-map.schema.json', 'business-journeys.schema.json', 'workspace-flows.schema.json', 'workspace-ownership.schema.json', 'workspace-change-impact.schema.json', 'workspace-quality.schema.json']) {
     try { validateJsonFile(assetFile('schemas', schema)); } catch (e) { errors.push(e.message); }
   }
   if (errors.length) {
@@ -2512,6 +2512,13 @@ Project commands:
   docgen resume                continue from existing artifacts/checkpoints
   docgen all [--fresh]         resumable by default; --fresh reruns all stages/pages
 
+System-of-systems commands:
+  docgen workspace init [dir]
+  docgen workspace add <repo>
+  docgen workspace list|validate|collect|analyze|generate|quality|status
+  docgen workspace impact <repo-id|contract-id>
+  docgen workspace changed|snapshot|resume|all
+
 Project-local overrides are optional under .commandcode/** and .docgen/prompts|schemas/**.`);
 }
 
@@ -2522,6 +2529,7 @@ if (command === 'init') {
   initProject(target, force);
   process.exit(0);
 }
+if (command === 'workspace') { const { runWorkspace } = await import('./workspace.mjs'); await runWorkspace(args, { kitVersion, engineHome, commandCodeHome }); process.exit(0); }
 if (command === 'version' || command === '--version' || command === '-v') { console.log(kitVersion); process.exit(0); }
 if (command === 'where') {
   console.log(`engineHome=${engineHome}`);

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "journeys"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string"
+    },
+    "journeys": {
+      "type": "array"
+    },
+    "businessRules": {
+      "type": "array"
+    }
+  },
+  "additionalProperties": true
+}

@@ -62,3 +62,24 @@ The machine-readable report is written to `.docgen/state/contract-report.json`.
 ## Trustworthiness reports
 
 Run `docgen traceability` to rebuild deterministic claim, contradiction, duplicate, and freshness reports. Run `docgen quality` to apply semantic thresholds. Neither command requires an LLM call.
+
+# P3 workspace contracts
+
+A system workspace is rooted by `.docgen-workspace/workspace.json` and references repositories by stable ID plus absolute path. Repository-local `.docgen/model/**` artifacts remain authoritative for repository facts.
+
+P3 canonical workspace outputs:
+
+- `repositories.json`
+- `model/system-map.json`
+- `model/dependency-graph.json`
+- `model/contract-registry.json`
+- `model/capability-map.json`
+- `model/business-journeys.json`
+- `model/request-flows.json`
+- `model/event-flows.json`
+- `model/data-lineage.json`
+- `model/shared-infrastructure.json`
+- `model/ownership.json`
+- `model/change-impact.json`
+
+Cross-repository edges require explicit registered repository identity, dependency target, shared producer/consumer channel, or repository model reference. Ambiguous relationships remain unresolved. Workspace publishing is Mermaid-only and deterministic.

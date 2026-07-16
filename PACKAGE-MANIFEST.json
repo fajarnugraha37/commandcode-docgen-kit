@@ -1,6 +1,6 @@
 {
   "name": "commandcode-docgen-kit",
-  "version": "0.9.0",
+  "version": "1.0.0",
   "defaultInstallationScope": "global",
   "globalComponents": [
     "agents",
@@ -27,11 +27,11 @@
     ".docgen/publish"
   ],
   "counts": {
-    "agents": 7,
-    "skills": 42,
-    "commands": 20,
-    "schemas": 24,
-    "prompts": 13
+    "agents": 8,
+    "skills": 50,
+    "commands": 21,
+    "schemas": 35,
+    "prompts": 14
   },
   "contractFirewall": {
     "boundaries": 19,
@@ -78,5 +78,22 @@
     "aliasesRedirects": true,
     "versionDeprecationMigration": true,
     "evidenceDerivedExamples": true
+  },
+  "p3SystemOfSystems": {
+    "workspaceRegistry": true,
+    "multiRepositoryAggregation": true,
+    "globalDependencyGraph": true,
+    "sharedContractRegistry": true,
+    "domainCapabilityMap": true,
+    "businessJourneys": true,
+    "crossServiceRequestFlows": true,
+    "crossServiceEventFlows": true,
+    "crossRepositoryDataLineage": true,
+    "sharedInfrastructure": true,
+    "ownershipAggregation": true,
+    "crossRepositoryChangeImpact": true,
+    "incrementalWorkspaceRebuild": true,
+    "mermaidOnly": true,
+    "zeroProviderBasePipeline": true
   }
 }

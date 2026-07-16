@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "repositories",
+    "edges"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string"
+    },
+    "repositories": {
+      "type": "array"
+    },
+    "edges": {
+      "type": "array"
+    }
+  },
+  "additionalProperties": true
+}
