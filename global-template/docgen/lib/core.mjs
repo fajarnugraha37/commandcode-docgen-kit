@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -42,12 +41,14 @@ export function projectPaths(root) {
     docs: path.join(root, 'docs'),
     audit: path.join(base, 'audit'),
     publish: path.join(base, 'publish'),
+    traceability: path.join(base, 'traceability'),
     runs: path.join(base, 'runs')
   };
 }
 
 export function ensureDir(dir) { fs.mkdirSync(dir, { recursive: true }); }
 export function now() { return new Date().toISOString(); }
+export function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 export function posix(value) { return String(value).replaceAll('\\', '/'); }
 export function rel(root, file) { return posix(path.relative(root, file)); }
 export function readJson(file, fallback = undefined) {
@@ -81,17 +82,7 @@ export function sourceSnapshot(root) {
     capturedAt: now()
   };
 }
-export function loadConfig(root) {
-  const paths = projectPaths(root);
-  return readJson(paths.config, {});
-}
-export function saveState(root, patch) {
-  const paths = projectPaths(root);
-  const current = readJson(paths.state, { schemaVersion: '2.0', kitVersion, stages: {} });
-  const next = { ...current, ...patch, schemaVersion: '2.0', kitVersion, updatedAt: now() };
-  writeJson(paths.state, next);
-  return next;
-}
+export function loadConfig(root) { return readJson(projectPaths(root).config, {}); }
 export function updateStage(root, stage, status, details = {}) {
   const paths = projectPaths(root);
   const state = readJson(paths.state, { schemaVersion: '2.0', kitVersion, stages: {} });
@@ -112,4 +103,3 @@ export function parseArgs(argv) {
   }
   return { positional, options };
 }
-export function userHome() { return os.homedir(); }
