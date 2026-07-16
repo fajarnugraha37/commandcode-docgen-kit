@@ -26,25 +26,51 @@ function sourceChunks(rel, text, size = 80, overlap = 15) {
   return chunks;
 }
 function extractFacts(rel, text) {
-  const facts = sourceChunks(rel, text); const ext = path.extname(rel).toLowerCase();
+  const ext = path.extname(rel).toLowerCase();
+  const facts = [{
+    id: sha256(`file-artifact\0${rel}`).slice(0, 24),
+    kind: 'file-artifact',
+    name: rel,
+    path: rel,
+    line: 1,
+    statement: `Indexed source artifact: ${rel}`,
+    snippet: snippet(text, 1),
+    metadata: { extension: ext || '<none>', basename: path.basename(rel) }
+  }, ...sourceChunks(rel, text)];
+
+  // Cross-language structural signals. These are hints only; model synthesis must
+  // confirm semantics from bounded source chunks and must never assume a framework.
+  addMatch(facts, text, rel, 'module-reference', /^\s*(?:import|export\s+.+?\s+from|from|require\s*\(|use|include|include_once|require_once|using|open)\s*[('"{<]*([^'";)>\s}]+)/gmi);
+  addMatch(facts, text, rel, 'symbol', /\b(?:class|interface|enum|record|object|struct|trait|type|protocol|actor|module|namespace|package)\s+([A-Za-z_$][A-Za-z0-9_.$]*)/g);
+  addMatch(facts, text, rel, 'function', /\b(?:function|def|func|fn|sub|procedure|proc)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/g);
+  addMatch(facts, text, rel, 'configuration-key', /^\s*["']?([A-Za-z0-9_.-]+)["']?\s*[=:]\s*.+$/gm);
+  addMatch(facts, text, rel, 'url-literal', /["']((?:https?:\/\/|\/)[A-Za-z0-9_~!$&'()*+,;=:@%\/.?#[\]-]+)["']/g);
+
+  // Common interface and runtime conventions are retained as optional evidence,
+  // but they are not required for repositories using other ecosystems.
   addMatch(facts, text, rel, 'url-path', /@Path\s*\(\s*["']([^"']+)["']\s*\)/g);
   addMatch(facts, text, rel, 'http-method', /@(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/g);
-  addMatch(facts, text, rel, 'spring-endpoint', /@(GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping|RequestMapping)\s*\(([^)]*)\)/g, 1);
-  addMatch(facts, text, rel, 'kafka-channel', /(?:topic|topics)\s*=\s*["']([^"']+)["']/g);
-  addMatch(facts, text, rel, 'kafka-listener', /@(KafkaListener)\b/g);
-  addMatch(facts, text, rel, 'rabbit-listener', /@(RabbitListener)\b/g);
-  addMatch(facts, text, rel, 'message-channel', /(?:queue|exchange|routingKey|channel)\s*=\s*["']([^"']+)["']/g);
-  addMatch(facts, text, rel, 'configuration-key', /^\s*([A-Za-z0-9_.-]+)\s*[=:]\s*.+$/gm);
-  addMatch(facts, text, rel, 'sql-table', /\b(?:from|join|into|update|table)\s+([A-Za-z_][A-Za-z0-9_.$]*)/gi);
-  addMatch(facts, text, rel, 'scheduled-job', /@(Scheduled)\b/g);
-  addMatch(facts, text, rel, 'security-boundary', /@(RolesAllowed|PermitAll|DenyAll|PreAuthorize|Secured)\b/g);
-  if (['.java','.kt','.kts','.js','.mjs','.cjs','.ts','.tsx','.go','.rs','.cs','.py','.rb','.php'].includes(ext)) {
-    addMatch(facts, text, rel, 'symbol', /\b(?:class|interface|enum|record|object|struct|trait|type)\s+([A-Za-z_$][A-Za-z0-9_$]*)/g);
-    addMatch(facts, text, rel, 'function', /\b(?:public|private|protected|static|final|async|export|suspend|override|internal|virtual|abstract|def|func|fn)?\s*(?:[A-Za-z_$][A-Za-z0-9_$<>,.?\[\] ]+\s+)?([A-Za-z_$][A-Za-z0-9_$]*)\s*\([^;{}]*\)\s*(?:throws [^{]+)?\{/g);
-  }
-  if (/pom\.xml$/i.test(rel)) addMatch(facts, text, rel, 'maven-dependency', /<artifactId>([^<]+)<\/artifactId>/g);
-  if (/package\.json$/i.test(rel)) addMatch(facts, text, rel, 'npm-dependency', /["']([^"']+)["']\s*:\s*["'][~^]?\d/g);
-  if (/Dockerfile$/i.test(rel)) addMatch(facts, text, rel, 'container-base', /^FROM\s+([^\s]+)/gmi);
+  addMatch(facts, text, rel, 'mapping-annotation', /@(GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping|RequestMapping)\s*\(([^)]*)\)/g, 1);
+  addMatch(facts, text, rel, 'route-declaration', /\b(?:app|router|server|route)\s*\.\s*(?:get|post|put|patch|delete|head|options|route)\s*\(\s*["']([^"']+)["']/gi);
+  addMatch(facts, text, rel, 'route-declaration', /@(?:app|router)\.(?:get|post|put|patch|delete|route)\s*\(\s*["']([^"']+)["']/gi);
+  addMatch(facts, text, rel, 'message-channel', /(?:topic|topics|queue|exchange|routingKey|channel|stream|subject)\s*[=:]\s*["']([^"']+)["']/gi);
+  addMatch(facts, text, rel, 'data-entity', /\b(?:from|join|into|update|table|collection|bucket|index)\s+([A-Za-z_][A-Za-z0-9_.$-]*)/gi);
+  addMatch(facts, text, rel, 'scheduled-automation', /@(Scheduled|Cron|PeriodicTask)\b/g);
+  addMatch(facts, text, rel, 'security-boundary', /@(RolesAllowed|PermitAll|DenyAll|PreAuthorize|Secured|Authorize|RequireRole)\b/g);
+
+  // Dependency manifests across major ecosystems.
+  if (/pom\.xml$/i.test(rel)) addMatch(facts, text, rel, 'dependency', /<artifactId>([^<]+)<\/artifactId>/g);
+  if (/\.csproj$|packages\.config$/i.test(rel)) addMatch(facts, text, rel, 'dependency', /<PackageReference[^>]+Include=["']([^"']+)["']/gi);
+  if (/package\.json$/i.test(rel)) addMatch(facts, text, rel, 'dependency', /["']([^"']+)["']\s*:\s*["'][~^*<>=\s]*\d/g);
+  if (/go\.mod$/i.test(rel)) addMatch(facts, text, rel, 'dependency', /^\s*(?:require\s+)?([A-Za-z0-9_.-]+\.[A-Za-z0-9_./-]+)\s+v\d/gm);
+  if (/Cargo\.toml$/i.test(rel)) addMatch(facts, text, rel, 'dependency', /^\s*([A-Za-z0-9_-]+)\s*=\s*(?:["']|\{)/gm);
+  if (/(?:requirements[^/]*\.txt|pyproject\.toml|Pipfile)$/i.test(rel)) addMatch(facts, text, rel, 'dependency', /^\s*["']?([A-Za-z0-9_.-]+)(?:\[[^\]]+\])?\s*(?:[<>=~!]|["'])/gm);
+  if (/(?:build\.gradle(?:\.kts)?|settings\.gradle(?:\.kts)?)$/i.test(rel)) addMatch(facts, text, rel, 'dependency', /\b(?:implementation|api|compileOnly|runtimeOnly|testImplementation)\s*\(?\s*["']([^"']+)["']/g);
+  if (/Gemfile$/i.test(rel)) addMatch(facts, text, rel, 'dependency', /^\s*gem\s+["']([^"']+)["']/gm);
+  if (/composer\.json$/i.test(rel)) addMatch(facts, text, rel, 'dependency', /["']([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)["']\s*:/g);
+  if (/mix\.exs$/i.test(rel)) addMatch(facts, text, rel, 'dependency', /\{:\s*([A-Za-z0-9_]+)\s*,/g);
+  if (/Dockerfile$/i.test(rel)) addMatch(facts, text, rel, 'runtime-base', /^FROM\s+([^\s]+)/gmi);
+  if (/\.tf$/i.test(rel)) addMatch(facts, text, rel, 'infrastructure-resource', /^\s*(?:resource|data|module|provider)\s+["']([^"']+)["']/gm);
   return facts;
 }
 

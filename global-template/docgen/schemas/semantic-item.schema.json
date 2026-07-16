@@ -88,6 +88,7 @@
           "enum": [
             "FACT",
             "INFERENCE",
+            "ASSUMPTION",
             "UNKNOWN"
           ]
         },

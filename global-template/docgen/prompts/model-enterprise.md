@@ -6,19 +6,20 @@ Do not read repository source, the SQLite database, or arbitrary files. The cont
 Write exactly one JSON file: `{{OUTPUT_PATH}}`.
 It must contain these top-level model objects: {{MODEL_NAMES}}.
 
-Required principles:
+Repository-neutral rules:
+- infer the technology stack only from supplied evidence and do not assume a language, framework, database, broker, protocol, cloud, or deployment style;
 - use only evidence and model items present in the context pack;
-- FACT items require direct repository-relative evidence;
-- use INFERENCE or UNKNOWN when information is incomplete;
+- FACT items require direct repository-relative evidence with line ranges;
+- use INFERENCE, ASSUMPTION, or UNKNOWN when information is incomplete;
 - use stable IDs and typed objects;
 - preserve explicit unknowns instead of guessing;
 - do not write Markdown or application code.
 
-Expected concerns:
+Expected concerns, only when evidenced:
 - security: trust boundaries, principals, authentication, authorization, permissions, identities, secrets, sensitive data, threats, controls;
-- operations: runtime, health, observability, SLI/SLO, alerts, capacity, scaling, failures, recovery, backup, deployment, runbooks;
+- operations: runtime, health, observability, service indicators, alerts, capacity, scaling, failures, recovery, backup, deployment, runbooks;
 - testing: suites, types, fixtures, environments, commands, contract tests, failure injection, quality gates, gaps;
-- data-governance: ownership, source of truth, classification, retention, transactions, consistency, concurrency, idempotency, reconciliation, lineage, migrations;
+- data-governance: ownership, source of truth, classification, retention, consistency, concurrency, idempotency, reconciliation, lineage, migrations;
 - decisions: recorded and inferred decisions, alternatives, trade-offs, constraints, consequences, supersession;
 - configuration: settings, environment matrix, flags, secrets, validation, reload/restart, tuning, deprecation;
 - change-impact: change surfaces, direct/transitive effects, compatibility, migration risks, tests and operations affected;

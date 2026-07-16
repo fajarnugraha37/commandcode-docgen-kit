@@ -7,8 +7,8 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { buildInventory } from '../lib/inventory.mjs';
 import { compileContext } from '../lib/context.mjs';
-import { databaseStats, indexRepository } from '../lib/indexer.mjs';
-import { audit, generate } from '../lib/pipeline.mjs';
+import { databaseStats, indexRepository, openDatabase } from '../lib/indexer.mjs';
+import { audit, generate, publish } from '../lib/pipeline.mjs';
 import { projectPaths, readJson, writeJson } from '../lib/core.mjs';
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
@@ -41,7 +41,10 @@ function installFakeProvider(root) {
   fs.copyFileSync(source, file); fs.chmodSync(file, 0o755);
   const check = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' });
   assert.equal(check.status, 0, check.stderr || check.stdout);
-  return file;
+  if (process.platform !== 'win32') return file;
+  const shim = path.join(dir, 'fake-provider.cmd');
+  fs.writeFileSync(shim, `@echo off\r\n"${process.execPath}" "${file}" %*\r\n`);
+  return shim;
 }
 
 test('inventory excludes binary and docgenignore paths', () => {
@@ -108,15 +111,94 @@ test('deterministic audit rejects FACT evidence outside inventory', async () => 
   await assert.rejects(() => audit(root), /Quality failed/);
 });
 
-test('full indexed pipeline uses four provider calls then zero on resume', () => {
+test('full indexed pipeline uses four provider calls, one index pass, minimum 30 turns, then zero calls on resume', () => {
   const root = fixture(); const p = projectPaths(root); const provider = installFakeProvider(root);
   fs.writeFileSync(path.join(root, 'src', 'Resource.java'), '@Path("/quotes")\nclass Resource { @GET void get() {} }\n');
-  const config = readJson(p.config); config.commandCode = { executable: provider, trust: false, skipOnboarding: false, yolo: false, verbose: false, maxTurns: { default: 4 } }; writeJson(p.config, config);
-  const first = spawnSync(process.execPath, [cli, 'all'], { cwd: root, encoding: 'utf8' }); assert.equal(first.status, 0, `FIRST STDERR:\n${first.stderr}\nFIRST STDOUT:\n${first.stdout}`);
-  const firstBudget = readJson(p.budget); assert.equal(firstBudget.usage.providerCalls, 4);
-  const second = spawnSync(process.execPath, [cli, 'all'], { cwd: root, encoding: 'utf8' }); assert.equal(second.status, 0, `SECOND STDERR:\n${second.stderr}\nSECOND STDOUT:\n${second.stdout}`);
+  const config = readJson(p.config); config.commandCode = { executable: provider, trust: false, skipOnboarding: false, yolo: false, verbose: false, maxTurns: { default: 4, generate: 12 } }; writeJson(p.config, config);
+  const env = { ...process.env, DOCGEN_PROGRESS: '1', DOCGEN_MAX_TURNS: '12' };
+  const first = spawnSync(process.execPath, [cli, 'all'], { cwd: root, encoding: 'utf8', env }); assert.equal(first.status, 0, `FIRST STDERR:\n${first.stderr}\nFIRST STDOUT:\n${first.stdout}`);
+  assert.equal((first.stdout.match(/\[docgen\] index RUNNING/g) ?? []).length, 1, first.stdout);
+  assert.match(first.stdout, /maxTurns 30/);
+  const healed = readJson(p.config).commandCode.maxTurns; for (const value of Object.values(healed)) assert.equal(value, 30);
+  const firstBudget = readJson(p.budget); assert.equal(firstBudget.usage.providerCalls, 4); assert.equal(firstBudget.usage.failedCalls, 0);
+  const second = spawnSync(process.execPath, [cli, 'all'], { cwd: root, encoding: 'utf8', env }); assert.equal(second.status, 0, `SECOND STDERR:\n${second.stderr}\nSECOND STDOUT:\n${second.stdout}`);
   const secondBudget = readJson(p.budget); assert.equal(secondBudget.usage.providerCalls, 4);
-  assert.equal(readJson(path.join(p.audit, 'quality-summary.json')).pass, true);
+  const summary = readJson(path.join(p.audit, 'quality-summary.json')); assert.equal(summary.pass, true); assert.equal(summary.claims, 1); assert.equal(summary.evidenceReferences, 1);
+});
+
+
+test('generic semantic index extracts cross-language artifacts without requiring a specific stack', () => {
+  const root = fixture();
+  fs.writeFileSync(path.join(root, 'src', 'worker.py'), 'import asyncio\nclass Worker:\n    def run(self):\n        return True\n');
+  fs.writeFileSync(path.join(root, 'src', 'lib.rs'), 'use std::collections::HashMap;\npub struct Cache {}\npub fn build() {}\n');
+  fs.writeFileSync(path.join(root, 'go.mod'), 'module example.test/tool\n\nrequire github.com/acme/lib v1.2.3\n');
+  fs.writeFileSync(path.join(root, 'main.tf'), 'resource "example_service" "main" {}\n');
+  indexRepository(root, { force: true });
+  const db = openDatabase(projectPaths(root).database);
+  const facts = db.prepare('SELECT kind,path,name FROM facts').all(); db.close();
+  assert(facts.some((fact) => fact.kind === 'file-artifact' && fact.path === 'src/worker.py'));
+  assert(facts.some((fact) => fact.kind === 'module-reference' && fact.path === 'src/worker.py'));
+  assert(facts.some((fact) => fact.kind === 'symbol' && fact.name === 'Worker'));
+  assert(facts.some((fact) => fact.kind === 'function' && fact.name === 'build'));
+  assert(facts.some((fact) => fact.kind === 'dependency' && fact.path === 'go.mod'));
+  assert(facts.some((fact) => fact.kind === 'infrastructure-resource' && fact.path === 'main.tf'));
+});
+
+test('audit rejects out-of-range line evidence and source changes after indexing', async () => {
+  const root = fixture(); const p = catalogFixture(root); await generate(root); await audit(root);
+  const traceFile = path.join(p.traceability, 'pages', 'endpoint-catalog.json'); const trace = readJson(traceFile);
+  trace.claims[0].evidence = [{ path: 'src/Resource.java', startLine: 999, endLine: 999 }]; writeJson(traceFile, trace);
+  await assert.rejects(() => audit(root), /Quality failed/);
+  let report = readJson(path.join(p.audit, 'deterministic.json')); assert(report.errors.some((error) => /line range/.test(error)));
+  trace.claims[0].evidence = [{ path: 'src/Resource.java', startLine: 1 }]; writeJson(traceFile, trace);
+  fs.appendFileSync(path.join(root, 'src', 'Resource.java'), '// changed after index\n');
+  await assert.rejects(() => audit(root), /Quality failed/);
+  report = readJson(path.join(p.audit, 'deterministic.json')); assert(report.errors.some((error) => /source changed after indexing/.test(error)));
+});
+
+test('provider exit after valid artifacts is recovered without repeating completed work', () => {
+  const root = fixture(); const p = projectPaths(root); const provider = installFakeProvider(root);
+  fs.writeFileSync(path.join(root, 'src', 'Resource.java'), 'class Resource {}\n');
+  const config = readJson(p.config); config.commandCode = { executable: provider, trust: false, skipOnboarding: false, yolo: false, maxTurns: { default: 12 } }; writeJson(p.config, config);
+  const run = spawnSync(process.execPath, [cli, 'all'], { cwd: root, encoding: 'utf8', env: { ...process.env, DOCGEN_PROGRESS: '0', DOCGEN_TEST_EXIT_AFTER_WRITE_STAGE: 'generate' } });
+  assert.equal(run.status, 0, `STDERR:\n${run.stderr}\nSTDOUT:\n${run.stdout}`); assert.match(run.stderr, /RECOVERED/);
+  const state = readJson(p.state); assert.equal(state.pages.overview.status, 'completed'); assert.equal(state.pages.overview.recovered, true);
+  const budget = readJson(p.budget); assert.equal(budget.usage.providerCalls, 4); assert.equal(budget.usage.failedCalls, 1);
+});
+
+test('partial batch generation checkpoints valid pages and retries only missing pages', () => {
+  const root = fixture(); const p = projectPaths(root); const provider = installFakeProvider(root);
+  fs.writeFileSync(path.join(root, 'src', 'Resource.java'), 'class Resource {}\n');
+  const config = readJson(p.config); config.commandCode = { executable: provider, trust: false, skipOnboarding: false, yolo: false, maxTurns: { default: 30 } }; config.execution.generationBatchSize = 2; config.execution.generationRecoveryAttempts = 3; writeJson(p.config, config);
+  const run = spawnSync(process.execPath, [cli, 'all'], { cwd: root, encoding: 'utf8', env: { ...process.env, DOCGEN_PROGRESS: '0', DOCGEN_TEST_PAGE_COUNT: '2', DOCGEN_TEST_PARTIAL_GENERATE: '1' } });
+  assert.equal(run.status, 0, `STDERR:\n${run.stderr}\nSTDOUT:\n${run.stdout}`); assert.match(run.stderr, /RECOVERY/);
+  const state = readJson(p.state); assert.equal(state.pages.overview.status, 'completed'); assert.equal(state.pages['detail-2'].status, 'completed');
+  const budget = readJson(p.budget); assert.equal(budget.usage.providerCalls, 5); assert.equal(budget.usage.failedCalls, 1);
+});
+
+
+test('recovery never accepts stale pre-existing plan artifacts when provider writes nothing', () => {
+  const root = fixture(); const p = projectPaths(root); const provider = installFakeProvider(root);
+  fs.writeFileSync(path.join(root, 'src', 'Resource.java'), 'class Resource {}\n');
+  const config = readJson(p.config); config.commandCode = { executable: provider, trust: false, skipOnboarding: false, yolo: false, maxTurns: { default: 30 } }; writeJson(p.config, config);
+  const first = spawnSync(process.execPath, [cli, 'all'], { cwd: root, encoding: 'utf8', env: { ...process.env, DOCGEN_PROGRESS: '0' } }); assert.equal(first.status, 0, first.stderr || first.stdout);
+  const currentState = readJson(p.state); currentState.stages.plan.status = 'failed'; writeJson(p.state, currentState);
+  const staleManifestHash = fs.readFileSync(p.plan, 'utf8');
+  const second = spawnSync(process.execPath, [cli, 'plan'], { cwd: root, encoding: 'utf8', env: { ...process.env, DOCGEN_PROGRESS: '0', DOCGEN_TEST_FAIL_BEFORE_WRITE_STAGE: 'plan' } });
+  assert.notEqual(second.status, 0, second.stdout); assert.match(second.stderr, /failed: exit 8/i); assert.equal(fs.readFileSync(p.plan, 'utf8'), staleManifestHash);
+  assert.equal(readJson(p.state).stages.plan.status, 'failed');
+});
+
+test('audit rejects unknown model references and publish rejects stale source artifacts', async () => {
+  const root = fixture(); const p = projectPaths(root); const provider = installFakeProvider(root);
+  fs.writeFileSync(path.join(root, 'src', 'Resource.java'), 'class Resource {}\n');
+  const config = readJson(p.config); config.commandCode = { executable: provider, trust: false, skipOnboarding: false, yolo: false, maxTurns: { default: 30 } }; writeJson(p.config, config);
+  const run = spawnSync(process.execPath, [cli, 'all'], { cwd: root, encoding: 'utf8', env: { ...process.env, DOCGEN_PROGRESS: '0' } }); assert.equal(run.status, 0, run.stderr || run.stdout);
+  const traceFile = path.join(p.traceability, 'pages', 'overview.json'); const trace = readJson(traceFile); trace.claims[0].sourceModelRefs = ['system:does-not-exist']; writeJson(traceFile, trace);
+  await assert.rejects(() => audit(root), /Quality failed/); const report = readJson(path.join(p.audit, 'deterministic.json')); assert(report.errors.some((error) => /unknown sourceModelRef/.test(error)));
+  trace.claims[0].sourceModelRefs = ['system:resource']; writeJson(traceFile, trace); await audit(root);
+  fs.appendFileSync(path.join(root, 'src', 'Resource.java'), '// stale\n');
+  assert.throws(() => publish(root), /stale relative to current source/);
 });
 
 test('v1 migration preserves docs and ignore policy while archiving workflow state', () => {
