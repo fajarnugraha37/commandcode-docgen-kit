@@ -10,6 +10,7 @@ import { projectPaths, writeJson } from '../lib/core.mjs';
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const engineRoot = path.resolve(testDir, '..');
+const repositoryRoot = path.resolve(engineRoot, '..', '..');
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'docgen-git-inventory-'));
@@ -29,17 +30,45 @@ function fixture() {
   return root;
 }
 
-test('git-aware inventory executes native git path enumeration', () => {
+function initializeGitFixture() {
   const root = fixture();
   const init = spawnSync('git', ['init'], { cwd: root, encoding: 'utf8' });
   assert.equal(init.status, 0, init.stderr || init.stdout);
   fs.writeFileSync(path.join(root, 'src', 'Tracked.java'), 'class Tracked {}\n');
   fs.writeFileSync(path.join(root, 'ignored.log'), 'ignore me\n');
   fs.writeFileSync(path.join(root, '.gitignore'), '*.log\n');
+  return root;
+}
 
+test('git-aware inventory executes native git path enumeration', () => {
+  const root = initializeGitFixture();
   const inventory = buildInventory(root);
   assert(inventory.files.some((item) => item.path === 'src/Tracked.java'));
   assert(!inventory.files.some((item) => item.path === 'ignored.log'));
+});
+
+test('installed launcher indexes a real Git repository', () => {
+  const commandCodeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'docgen-installed-home-'));
+  const install = spawnSync(process.execPath, [
+    path.join(repositoryRoot, 'install.mjs'),
+    '--force',
+    '--no-link-cli',
+    '--no-hooks',
+    '--commandcode-home',
+    commandCodeHome
+  ], { cwd: repositoryRoot, encoding: 'utf8' });
+  assert.equal(install.status, 0, `INSTALL STDERR:\n${install.stderr}\nINSTALL STDOUT:\n${install.stdout}`);
+
+  const root = initializeGitFixture();
+  const launcher = path.join(commandCodeHome, 'docgen', 'bin', 'docgen-launcher.mjs');
+  const run = spawnSync(process.execPath, [launcher, 'index'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, DOCGEN_PROGRESS: '0' }
+  });
+  assert.equal(run.status, 0, `INDEX STDERR:\n${run.stderr}\nINDEX STDOUT:\n${run.stdout}`);
+  assert.doesNotMatch(`${run.stdout}\n${run.stderr}`, /Bolean is not defined/);
+  assert(fs.existsSync(path.join(root, '.docgen', 'index', 'semantic.db')));
 });
 
 test('shipped JavaScript contains no misspelled Boolean global', () => {
