@@ -35,8 +35,13 @@ jobs:
         working-directory: global-template/docgen
         run: npm run check
       - name: Unit and integration tests
+        if: runner.os != 'Windows'
         working-directory: global-template/docgen
         run: npm test
+      - name: Windows launcher, shim, heartbeat, and timeout tests
+        if: runner.os == 'Windows'
+        working-directory: global-template/docgen
+        run: node --test test/windows-runtime.test.mjs
       - name: Installer dry run
         run: node install.mjs --dry-run --no-link-cli
       - name: Upload exact CI source
