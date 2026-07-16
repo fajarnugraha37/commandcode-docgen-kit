@@ -35,15 +35,17 @@ function catalogFixture(root) {
 }
 
 function installFakeProvider(root) {
-  const file = path.join(root, 'fake-provider.mjs');
+  const p = projectPaths(root); const dir = path.join(p.base, 'test-bin'); fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, 'fake-provider.mjs');
   fs.writeFileSync(file, `#!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
 const prompt=fs.readFileSync(0,'utf8');
 const stage=process.env.DOCGEN_STAGE;
 const cwd=process.cwd();
-const target=(prompt.match(/Write exactly one JSON file: \\`([^\\`]+)\\`/i)||[])[1];
-const write=(rel,value)=>{const file=path.join(cwd,rel);fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,JSON.stringify(value,null,2)+'\\n');};
+const between=(text,start,end)=>{const tail=text.split(start)[1];return tail?tail.split(end)[0]:null;};
+const target=between(prompt,'Write exactly one JSON file: \\`','\\`');
+const write=(rel,value)=>{if(!rel)throw new Error('missing output path for '+stage);const file=path.join(cwd,rel);fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,JSON.stringify(value,null,2)+'\\n');};
 if(stage==='modelCore'){
   write(target,{system:{components:[{id:'resource',kind:'component',name:'Resource',statement:'HTTP resource',classification:'FACT',confidence:1,evidence:[{path:'src/Resource.java',startLine:1}]}],relationships:[],workflows:[],unknowns:[]},business:{actors:[],capabilities:[],concepts:[],businessRules:[],decisions:[],branchConditions:[],lifecycles:[],invariants:[],useCases:[],unknowns:[]},flows:{businessFlows:[],controlFlows:[],requestFlows:[],trafficFlows:[],dataFlows:[],eventFlows:[]},catalogs:{endpoints:[],messageHandlers:[],externalDependencies:[],dataStores:[],scheduledJobs:[]}});
 }else if(stage==='modelEnterprise'){
@@ -51,7 +53,7 @@ if(stage==='modelCore'){
 }else if(stage==='plan'){
   write(target,{schemaVersion:'2.0',metadata:{description:'Fixture docs'},pages:[{id:'overview',title:'System Overview',summary:'Fixture overview.',category:'orientation',mode:'explanation',type:'overview',order:1,audience:['engineer'],coverageTags:['architecture'],query:'resource architecture',requiredSections:[],risk:'low',relatedPages:[]}]});
 }else if(stage==='generate'){
-  const json=(prompt.match(/Page contracts:\\n([\\s\\S]*?)\\n\\nFor every contract:/)||[])[1];
+  const json=between(prompt,'Page contracts:\\n','\\n\\nFor every contract:');
   const contracts=JSON.parse(json);
   for(const contract of contracts){
     const page=contract.page;
@@ -60,10 +62,12 @@ if(stage==='modelCore'){
     write(contract.traceabilityPath,{schemaVersion:'2.0',pageId:page.id,pagePath:contract.outputPath,claims:[{id:page.id+':resource',section:page.title,statement:'The repository exposes an HTTP resource.',classification:'FACT',confidence:1,evidence:[{path:'src/Resource.java',startLine:1}],sourceModelRefs:['system:resource']}]});
   }
 }else if(stage==='audit'){
-  const output=(prompt.match(/report: \\`([^\\`]+)\\`/i)||[])[1]||'.docgen/audit/llm-risk.json';write(output,{schemaVersion:'2.0',pages:[]});
+  const output=between(prompt,'report: \\`','\\`')||'.docgen/audit/llm-risk.json';write(output,{schemaVersion:'2.0',pages:[]});
 }else{process.exitCode=2;console.error('unexpected stage '+stage);}
 `);
   fs.chmodSync(file, 0o755);
+  const check = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' });
+  assert.equal(check.status, 0, check.stderr || check.stdout);
   return file;
 }
 
@@ -135,9 +139,9 @@ test('full indexed pipeline uses four provider calls then zero on resume', () =>
   const root = fixture(); const p = projectPaths(root); const provider = installFakeProvider(root);
   fs.writeFileSync(path.join(root, 'src', 'Resource.java'), '@Path("/quotes")\nclass Resource { @GET void get() {} }\n');
   const config = readJson(p.config); config.commandCode = { executable: provider, trust: false, skipOnboarding: false, yolo: false, verbose: false, maxTurns: { default: 4 } }; writeJson(p.config, config);
-  const first = spawnSync(process.execPath, [cli, 'all'], { cwd: root, encoding: 'utf8' }); assert.equal(first.status, 0, first.stderr || first.stdout);
+  const first = spawnSync(process.execPath, [cli, 'all'], { cwd: root, encoding: 'utf8' }); assert.equal(first.status, 0, `FIRST STDERR:\n${first.stderr}\nFIRST STDOUT:\n${first.stdout}`);
   const firstBudget = readJson(p.budget); assert.equal(firstBudget.usage.providerCalls, 4);
-  const second = spawnSync(process.execPath, [cli, 'all'], { cwd: root, encoding: 'utf8' }); assert.equal(second.status, 0, second.stderr || second.stdout);
+  const second = spawnSync(process.execPath, [cli, 'all'], { cwd: root, encoding: 'utf8' }); assert.equal(second.status, 0, `SECOND STDERR:\n${second.stderr}\nSECOND STDOUT:\n${second.stdout}`);
   const secondBudget = readJson(p.budget); assert.equal(secondBudget.usage.providerCalls, 4);
   assert.equal(readJson(path.join(p.audit, 'quality-summary.json')).pass, true);
 });
