@@ -341,7 +341,7 @@ async function runCommandCodeOnce(stage, prompt, target = '', progressLabel = ''
     child.stdin.end(prompt);
   });
 }
-async function runCommandCode(stage, prompt, target = '', progressLabel = '') {
+async function runCommandCode(stage, prompt, target = '', progressLabel = '', lifecycle = {}) {
   const cfg = retryConfig();
   const maxAttempts = cfg.enabled ? cfg.maxAttempts : 1;
   let lastError;
@@ -359,10 +359,229 @@ async function runCommandCode(stage, prompt, target = '', progressLabel = '') {
       const jitter = exponential * cfg.jitterRatio * ((Math.random() * 2) - 1);
       const delay = Math.max(1, Math.round(exponential + jitter));
       console.warn(`[docgen] retryable ${err.classification ?? 'provider error'} on ${stage}${target ? `:${target}` : ''}; retry ${attempt + 1}/${maxAttempts} after ~${delay}s.`);
+      try { await lifecycle.beforeRetry?.(err, attempt); } catch (resetError) { throw Object.assign(new Error(`Failed to reset stage outputs before retry: ${resetError.message}`), { exitCode: 1, classification: 'contract-reset-error' }); }
       await cooldown(delay, err.classification ?? 'provider-error');
     }
   }
   throw lastError;
+}
+
+
+function arrayValue(obj, keys, fallback = []) {
+  for (const key of keys) {
+    const value = obj?.[key];
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === 'object') return Object.values(value);
+    if (value !== undefined && value !== null && value !== '') return [value];
+  }
+  return fallback;
+}
+function scalarValue(obj, keys, fallback = undefined) {
+  for (const key of keys) {
+    const value = obj?.[key];
+    if (value !== undefined && value !== null && value !== '') return value;
+  }
+  return fallback;
+}
+function itemIdentity(value) {
+  if (value && typeof value === 'object') {
+    const identity = value.id ?? value.key ?? value.name ?? value.path ?? value.operationId ?? value.handler ?? value.topic ?? value.queue;
+    if (identity !== undefined) return `id:${String(identity)}`;
+    const ordered = Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)));
+    return `json:${JSON.stringify(ordered)}`;
+  }
+  return `scalar:${String(value)}`;
+}
+function uniqueArray(values) {
+  const seen = new Set(); const out = [];
+  for (const value of values) { const key = itemIdentity(value); if (seen.has(key)) continue; seen.add(key); out.push(value); }
+  return out;
+}
+function canonicalArray(obj, canonicalKey, aliases = []) {
+  const values = [];
+  for (const key of [canonicalKey, ...aliases]) {
+    const value = obj?.[key];
+    if (Array.isArray(value)) values.push(...value);
+    else if (value && typeof value === 'object') values.push(...Object.values(value));
+    else if (value !== undefined && value !== null && value !== '') values.push(value);
+  }
+  return uniqueArray(values);
+}
+function canonicalModelBase(obj = {}) {
+  return {
+    ...obj,
+    schemaVersion: '1.0',
+    generatedAt: obj.generatedAt ?? obj.createdAt ?? obj.updatedAt ?? obj.timestamp ?? now()
+  };
+}
+function normalizeSystemObject(input = {}) {
+  const obj = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  return {
+    schemaVersion: '1.0', generatedAt: obj.generatedAt ?? obj.createdAt ?? obj.updatedAt ?? obj.timestamp ?? now(),
+    components: canonicalArray(obj, 'components', ['services', 'modules', 'subsystems', 'applications', 'nodes']),
+    relationships: canonicalArray(obj, 'relationships', ['dependencies', 'links', 'interactions', 'connections', 'edges']),
+    workflows: canonicalArray(obj, 'workflows', ['processes', 'executionFlows', 'systemFlows', 'scenarios']),
+    unknowns: canonicalArray(obj, 'unknowns', ['openQuestions', 'unresolved', 'gaps', 'uncertainties']),
+    metadata: obj.metadata ?? {}
+  };
+}
+function normalizeBusinessObject(input = {}) {
+  const obj = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  return {
+    schemaVersion: '1.0', generatedAt: obj.generatedAt ?? obj.createdAt ?? obj.updatedAt ?? obj.timestamp ?? now(),
+    actors: canonicalArray(obj, 'actors', ['roles', 'personas', 'participants', 'users']),
+    capabilities: canonicalArray(obj, 'capabilities', ['businessCapabilities', 'functions', 'features']),
+    concepts: canonicalArray(obj, 'concepts', ['domainConcepts', 'entities', 'terms', 'vocabulary']),
+    businessRules: canonicalArray(obj, 'businessRules', ['rules', 'policies', 'businessLogic']),
+    decisions: canonicalArray(obj, 'decisions', ['decisionPoints', 'decisionRules']),
+    branchConditions: canonicalArray(obj, 'branchConditions', ['branches', 'conditions', 'guards']),
+    lifecycles: canonicalArray(obj, 'lifecycles', ['lifeCycles', 'stateMachines', 'stateLifecycles']),
+    invariants: canonicalArray(obj, 'invariants', ['domainInvariants', 'constraints']),
+    useCases: canonicalArray(obj, 'useCases', ['usecases', 'scenarios', 'businessScenarios']),
+    unknowns: canonicalArray(obj, 'unknowns', ['openQuestions', 'unresolved', 'gaps', 'uncertainties']),
+    metadata: obj.metadata ?? {}
+  };
+}
+function normalizeFlowsObject(input = {}) {
+  const obj = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  const result = {
+    schemaVersion: '1.0', generatedAt: obj.generatedAt ?? obj.createdAt ?? obj.updatedAt ?? obj.timestamp ?? now(),
+    businessFlows: canonicalArray(obj, 'businessFlows', ['businessProcesses', 'businessWorkflows']),
+    controlFlows: canonicalArray(obj, 'controlFlows', ['executionFlows', 'codeFlows', 'callFlows']),
+    requestFlows: canonicalArray(obj, 'requestFlows', ['httpFlows', 'apiFlows', 'inboundFlows']),
+    trafficFlows: canonicalArray(obj, 'trafficFlows', ['networkFlows', 'runtimeTrafficFlows']),
+    dataFlows: canonicalArray(obj, 'dataFlows', ['dataPipelines', 'informationFlows']),
+    eventFlows: canonicalArray(obj, 'eventFlows', ['messageFlows', 'messagingFlows', 'asyncFlows']),
+    metadata: obj.metadata ?? {}
+  };
+  const generic = arrayValue(obj, ['flows'], []);
+  for (const flow of generic) {
+    const type = String(flow?.type ?? flow?.kind ?? flow?.category ?? '').toLowerCase();
+    if (/business/.test(type)) result.businessFlows.push(flow);
+    else if (/control|execution|call/.test(type)) result.controlFlows.push(flow);
+    else if (/request|http|api/.test(type)) result.requestFlows.push(flow);
+    else if (/traffic|network|runtime/.test(type)) result.trafficFlows.push(flow);
+    else if (/data|information/.test(type)) result.dataFlows.push(flow);
+    else if (/event|message|async|kafka|rabbit/.test(type)) result.eventFlows.push(flow);
+  }
+  for (const key of ['businessFlows','controlFlows','requestFlows','trafficFlows','dataFlows','eventFlows']) result[key] = uniqueArray(result[key]);
+  return result;
+}
+function normalizeCatalogsObject(input = {}) {
+  const obj = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  return {
+    schemaVersion: '1.0', generatedAt: obj.generatedAt ?? obj.createdAt ?? obj.updatedAt ?? obj.timestamp ?? now(),
+    endpoints: canonicalArray(obj, 'endpoints', ['apis', 'routes', 'httpEndpoints', 'apiEndpoints', 'restEndpoints', 'grpcEndpoints', 'websocketEndpoints', 'sseEndpoints']),
+    messageHandlers: canonicalArray(obj, 'messageHandlers', ['handlers', 'consumers', 'listeners', 'producers', 'messageConsumers', 'messageProducers', 'publishers', 'kafkaHandlers', 'rabbitHandlers', 'queueHandlers', 'streamHandlers']),
+    externalDependencies: canonicalArray(obj, 'externalDependencies', ['dependencies', 'integrations', 'externalServices', 'cloudServices', 'services', 'internalServices', 'upstreamServices', 'downstreamServices', 'thirdPartyServices', 'cloudResources']),
+    dataStores: canonicalArray(obj, 'dataStores', ['datastores', 'databases', 'storage', 'stores', 'caches']),
+    scheduledJobs: canonicalArray(obj, 'scheduledJobs', ['jobs', 'schedulers', 'cronJobs', 'scheduledTasks']),
+    metadata: obj.metadata ?? {}
+  };
+}
+function normalizeUpdatePlanObject(input = {}, changedPaths = []) {
+  const obj = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  const normalizedChanges = canonicalArray(obj, 'changedPaths', ['changedFiles', 'paths', 'changes']);
+  return {
+    schemaVersion: '1.0', generatedAt: obj.generatedAt ?? obj.createdAt ?? obj.updatedAt ?? obj.timestamp ?? now(),
+    changedPaths: normalizedChanges.length ? normalizedChanges.map(String) : changedPaths.map(String),
+    affectedEvidenceScopes: canonicalArray(obj, 'affectedEvidenceScopes', ['evidenceScopes', 'affectedScopes', 'scopes']).map(String),
+    affectedModels: canonicalArray(obj, 'affectedModels', ['models', 'modelArtifacts', 'affectedModelArtifacts']).map((x) => typeof x === 'string' ? x : x?.path ?? x?.id ?? x?.name).filter(Boolean),
+    affectedPageIds: canonicalArray(obj, 'affectedPageIds', ['pageIds', 'pages', 'affectedPages']).map((x) => typeof x === 'string' ? slug(x) : slug(x?.id ?? x?.pageId ?? x?.name)),
+    rationale: canonicalArray(obj, 'rationale', ['reasons', 'reasoning', 'explanations']).map((x) => typeof x === 'string' ? x : x?.summary ?? x?.reason ?? JSON.stringify(x)),
+    metadata: obj.metadata ?? {}
+  };
+}
+function normalizeAuditReportObject(input = {}, page, options = {}) {
+  const obj = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  const findings = canonicalArray(obj, 'findings', ['issues', 'problems', 'results', 'violations']).map((f, i) => {
+    if (typeof f === 'string') return { id: `finding-${i + 1}`, severity: 'medium', summary: f };
+    const item = f && typeof f === 'object' ? { ...f } : { summary: String(f) };
+    item.id ??= item.code ?? `finding-${i + 1}`;
+    item.severity = String(item.severity ?? item.level ?? item.priority ?? 'medium').toLowerCase();
+    if (!['critical', 'high', 'medium', 'low'].includes(item.severity)) item.severity = 'medium';
+    item.summary ??= item.message ?? item.description ?? item.title ?? 'Unspecified finding';
+    delete item.level; delete item.priority; delete item.message;
+    return item;
+  });
+  return {
+    schemaVersion: '1.0', auditedAt: scalarValue(obj, ['auditedAt', 'generatedAt', 'createdAt', 'timestamp'], now()),
+    pageId: slug(scalarValue(obj, ['pageId', 'pageID', 'id', 'page'], page.id)),
+    pagePath: canonicalPagePath(scalarValue(obj, ['pagePath', 'path', 'file', 'documentPath'], page.path)),
+    pageHash: scalarValue(obj, ['pageHash', 'hash', 'contentHash'], options.defaultHashes ? pageCurrentHash(page) : null),
+    inputHash: scalarValue(obj, ['inputHash', 'pageInputHash', 'evidenceHash', 'contractHash'], options.defaultHashes ? pageInputHash(page) : null),
+    findings,
+    metadata: obj.metadata ?? {}
+  };
+}
+function assertCanonicalModel(name, obj, arrayKeys) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw new Error(`${name} must be a JSON object.`);
+  if (obj.schemaVersion !== '1.0') throw new Error(`${name} schemaVersion must normalize to 1.0.`);
+  for (const key of arrayKeys) if (!Array.isArray(obj[key])) throw new Error(`${name}.${key} must be an array after normalization.`);
+  return obj;
+}
+function snapshotOutputs(paths) {
+  const files = new Map();
+  const directories = [];
+  for (const target of paths) {
+    if (fs.existsSync(target) && fs.statSync(target).isDirectory()) {
+      directories.push(target);
+      for (const file of listFilesRecursive(target)) files.set(file, fs.readFileSync(file));
+    } else files.set(target, fs.existsSync(target) ? fs.readFileSync(target) : null);
+  }
+  return { files, directories };
+}
+function restoreOutputs(snapshot) {
+  for (const dir of snapshot.directories) if (fs.existsSync(dir)) {
+    for (const file of listFilesRecursive(dir)) if (!snapshot.files.has(file)) { try { fs.rmSync(file, { force: true }); } catch {} }
+  }
+  for (const [file, content] of snapshot.files.entries()) {
+    if (content === null) { try { fs.rmSync(file, { force: true }); } catch {} }
+    else { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, content); }
+  }
+}
+function copyPathToQuarantine(source, dir) {
+  if (!fs.existsSync(source)) return;
+  if (fs.statSync(source).isDirectory()) {
+    for (const file of listFilesRecursive(source)) {
+      const target = path.join(dir, rel(file).replaceAll('/', '__'));
+      try { fs.copyFileSync(file, target); } catch {}
+    }
+  } else {
+    const target = path.join(dir, rel(source).replaceAll('/', '__'));
+    try { fs.copyFileSync(source, target); } catch {}
+  }
+}
+function quarantineOutputs(stage, paths, error) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const dir = path.join(root, '.docgen', 'quarantine', `${stamp}-${stage}`);
+  fs.mkdirSync(dir, { recursive: true });
+  for (const target of paths) copyPathToQuarantine(target, dir);
+  writeJson(path.join(dir, 'error.json'), { schemaVersion: '1.0', stage, capturedAt: now(), error: error?.message ?? String(error), paths: paths.map(rel) });
+  return rel(dir);
+}
+async function runContractStage(stage, paths, operation, normalizeAndValidate) {
+  const snapshot = snapshotOutputs(paths);
+  try {
+    await operation(() => restoreOutputs(snapshot));
+    return normalizeAndValidate();
+  } catch (error) {
+    const quarantine = quarantineOutputs(stage, paths, error);
+    restoreOutputs(snapshot);
+    const wrapped = new Error(`${stage} did not commit canonical output. Previous valid artifacts were restored. Raw/partial output: ${quarantine}. Cause: ${error.message}`);
+    wrapped.exitCode = error?.exitCode;
+    wrapped.classification = error?.classification ?? 'contract-failure';
+    throw wrapped;
+  }
+}
+function normalizeJsonFile(file, normalizer, validator) {
+  if (!fs.existsSync(file)) throw new Error(`Missing ${rel(file)}`);
+  let raw;
+  try { raw = readJson(file); } catch (e) { throw new Error(`Invalid JSON in ${rel(file)}: ${e.message}`); }
+  const canonical = normalizer(raw);
+  validator(canonical);
+  writeJson(file, canonical);
+  return canonical;
 }
 
 function canonicalPagePath(rawPath) {
@@ -403,40 +622,84 @@ function buildReferenceAliases() {
 }
 function normalizeManifest(write = true) {
   if (!fs.existsSync(manifestPath)) throw new Error('Missing .docgen/plan/manifest.json. Run plan first.');
-  const manifest = readJson(manifestPath);
-  if (!Array.isArray(manifest.pages)) throw new Error('Manifest pages must be an array.');
+  let raw;
+  try { raw = readJson(manifestPath); } catch (e) { throw new Error(`Invalid ${rel(manifestPath)}: ${e.message}`); }
+  const sourcePages = arrayValue(raw, ['pages', 'documents', 'entries', 'articles'], []);
+  if (!sourcePages.length) throw new Error('Manifest contains no pages/documents/entries array.');
   const aliases = buildReferenceAliases();
-  manifest.schemaVersion = '1.0';
-  manifest.generatedAt ??= now();
-  manifest.navigation = Array.isArray(manifest.navigation) ? manifest.navigation : [];
-  manifest.pages = manifest.pages.map((page) => ({
-    ...page,
-    id: slug(page.id || page.title || page.path),
-    path: canonicalPagePath(page.path || page.id || page.title),
-    evidence: Array.isArray(page.evidence) ? page.evidence.map((x) => normalizeReference(x, aliases)) : [],
-    models: Array.isArray(page.models) ? page.models.map((x) => normalizeReference(x, aliases)) : [],
-    audience: Array.isArray(page.audience) && page.audience.length ? page.audience : ['engineer'],
-    requiredSections: Array.isArray(page.requiredSections) && page.requiredSections.length ? page.requiredSections : ['Overview'],
-    diagramIntents: Array.isArray(page.diagramIntents) ? page.diagramIntents : [],
-    coverageTags: Array.isArray(page.coverageTags) ? page.coverageTags : [],
-    relatedPages: Array.isArray(page.relatedPages) ? page.relatedPages.map(slug) : []
-  }));
+  const pages = sourcePages.map((value, index) => {
+    const page = value && typeof value === 'object' ? value : { path: String(value) };
+    const title = String(scalarValue(page, ['title', 'name', 'label'], `Page ${index + 1}`));
+    const id = slug(scalarValue(page, ['id', 'pageId', 'key', 'slug'], title || page.path));
+    return {
+      id,
+      path: canonicalPagePath(scalarValue(page, ['path', 'file', 'outputPath', 'targetPath', 'documentPath'], id)),
+      title,
+      type: String(scalarValue(page, ['type', 'pageType', 'kind'], 'concept')).toLowerCase(),
+      category: String(scalarValue(page, ['category', 'group', 'sectionGroup'], 'Documentation')),
+      section: scalarValue(page, ['section', 'subsection'], page.section),
+      purpose: String(scalarValue(page, ['purpose', 'objective', 'goal'], title)),
+      summary: String(scalarValue(page, ['summary', 'description', 'overview'], scalarValue(page, ['purpose', 'objective'], title))),
+      evidence: arrayValue(page, ['evidence', 'sources', 'evidenceIds', 'sourceArtifacts'], []).map((x) => normalizeReference(typeof x === 'string' ? x : x?.path ?? x?.id ?? x?.name, aliases)).filter(Boolean),
+      models: arrayValue(page, ['models', 'modelInputs', 'modelArtifacts'], []).map((x) => normalizeReference(typeof x === 'string' ? x : x?.path ?? x?.id ?? x?.name, aliases)).filter(Boolean),
+      audience: arrayValue(page, ['audience', 'audiences', 'readers'], ['engineer']).map(String),
+      requiredSections: arrayValue(page, ['requiredSections', 'sections', 'headings'], ['Overview']).map((x) => typeof x === 'string' ? x : x?.title ?? x?.name).filter(Boolean),
+      diagramIntents: arrayValue(page, ['diagramIntents', 'diagrams', 'diagramRequirements'], []).map((x) => typeof x === 'string' ? x : x?.intent ?? x?.title ?? x?.type).filter(Boolean),
+      coverageTags: arrayValue(page, ['coverageTags', 'coverage', 'tags'], []).map(String),
+      requiredTables: arrayValue(page, ['requiredTables', 'tables', 'tableRequirements'], []).map((x) => typeof x === 'string' ? x : x?.title ?? x?.name).filter(Boolean),
+      relatedPages: arrayValue(page, ['relatedPages', 'related', 'links'], []).map((x) => slug(typeof x === 'string' ? x : x?.id ?? x?.pageId ?? x?.title)).filter(Boolean),
+      qualityHints: arrayValue(page, ['qualityHints', 'hints', 'qualityRequirements'], []).map(String)
+    };
+  });
+  const pageIdByAlias = new Map();
+  for (const p of pages) {
+    for (const alias of [p.id, p.title, p.path, p.path.replace(/^docs\//, '').replace(/\.md$/i, ''), path.posix.basename(p.path, '.md')]) pageIdByAlias.set(slug(alias), p.id);
+  }
+  const rawNavigation = arrayValue(raw, ['navigation', 'categories', 'groups', 'sections'], []);
+  const navigation = rawNavigation.map((value, index) => {
+    const group = value && typeof value === 'object' ? value : { title: String(value) };
+    const title = String(scalarValue(group, ['title', 'name', 'label'], `Section ${index + 1}`));
+    const groupPages = arrayValue(group, ['pages', 'pageIds', 'items', 'documents'], []).map((x) => {
+      const rawId = typeof x === 'string' ? x : x?.id ?? x?.pageId ?? x?.path ?? x?.title;
+      return pageIdByAlias.get(slug(rawId)) ?? slug(rawId);
+    }).filter(Boolean);
+    return { id: slug(scalarValue(group, ['id', 'key', 'slug'], title)), title, description: group.description ?? group.summary, pages: groupPages };
+  });
+  const manifest = {
+    schemaVersion: '1.0',
+    generatedAt: raw.generatedAt ?? raw.createdAt ?? raw.updatedAt ?? now(),
+    navigation,
+    pages,
+    metadata: raw.metadata ?? {}
+  };
   if (write) writeJson(manifestPath, manifest);
   return manifest;
 }
-function manifestPreflight(manifest = normalizeManifest()) {
+function manifestPreflight(manifest = normalizeManifest(), options = {}) {
   const errors = []; const warnings = []; const ids = new Set(); const paths = new Set();
+  const allowedTypes = new Set(loadConfig().pageTypes ?? ['overview','architecture','business','concept','flow','guide','reference','data','integration','operations','troubleshooting']);
   for (const page of manifest.pages) {
     if (ids.has(page.id)) errors.push(`duplicate page id: ${page.id}`); ids.add(page.id);
     if (paths.has(page.path)) errors.push(`duplicate page path: ${page.path}`); paths.add(page.path);
+    if (!page.title?.trim()) errors.push(`${page.id}: title is required`);
+    if (!page.category?.trim()) errors.push(`${page.id}: category is required`);
+    if (!allowedTypes.has(page.type)) errors.push(`${page.id}: unsupported page type ${page.type}`);
+    if (!Array.isArray(page.requiredSections) || !page.requiredSections.length) errors.push(`${page.id}: requiredSections must not be empty`);
     for (const ref of [...(page.evidence ?? []), ...(page.models ?? [])]) if (typeof ref === 'string' && !exists(ref)) errors.push(`${page.id}: unresolved input reference: ${ref}`);
   }
+  const navigationCounts = new Map();
   for (const group of manifest.navigation ?? []) for (const id of group.pages ?? []) {
     const pageId = typeof id === 'string' ? id : id?.id;
     if (pageId && !ids.has(pageId)) errors.push(`navigation ${group.id ?? group.title}: unknown page id ${pageId}`);
+    else if (pageId) navigationCounts.set(pageId, (navigationCounts.get(pageId) ?? 0) + 1);
+  }
+  if ((manifest.navigation ?? []).length) for (const id of ids) {
+    const count = navigationCounts.get(id) ?? 0;
+    if (count === 0) errors.push(`page is missing from navigation: ${id}`);
+    if (count > 1) errors.push(`page appears in multiple navigation groups: ${id}`);
   }
   for (const page of manifest.pages) for (const related of page.relatedPages ?? []) if (!ids.has(related)) warnings.push(`${page.id}: related page does not exist: ${related}`);
-  const coverageGaps = manifestCoverageGaps(manifest);
+  const coverageGaps = options.includeCoverage === false ? [] : manifestCoverageGaps(manifest);
   if (coverageGaps.length) errors.push(`manifest coverage gaps: ${coverageGaps.join(', ')}`);
   const result = { schemaVersion: '1.0', checkedAt: now(), valid: errors.length === 0, pageCount: manifest.pages.length, errors, warnings };
   writeJson(preflightPath, result);
@@ -480,6 +743,21 @@ function listFilesRecursive(base) {
   }
   return out;
 }
+function canonicalEvidencePath(rawPath, evidenceDir) {
+  let value = String(rawPath ?? '').trim().replaceAll('\\', '/');
+  if (!value) return '';
+  if (path.isAbsolute(value)) value = rel(value);
+  value = value.replace(/^\.\//, '').replace(/^\/+/, '');
+  if (!value.startsWith('.docgen/evidence/')) {
+    const direct = path.join(root, value);
+    const underEvidence = path.join(evidenceDir, value.replace(/^evidence\//, ''));
+    if (fs.existsSync(underEvidence) || !fs.existsSync(direct)) value = rel(underEvidence);
+  }
+  value = path.posix.normalize(value);
+  if (!value.startsWith('.docgen/evidence/') || value.includes('/../')) throw new Error(`Unsafe evidence artifact path: ${rawPath}`);
+  return value;
+}
+
 function normalizeEvidenceIndex() {
   const evidenceDir = path.dirname(evidenceIndexPath);
   let obj = {};
@@ -489,13 +767,11 @@ function normalizeEvidenceIndex() {
   const candidates = [obj.artifacts, obj.files, obj.evidenceFiles, obj.entries, obj.documents, obj.items].find(Array.isArray) ?? [];
   const normalizeEntry = (item, i) => {
     if (typeof item === 'string') {
-      const p = item.replaceAll('\\', '/');
+      const p = canonicalEvidencePath(item, evidenceDir);
       return { id: slug(path.basename(p, path.extname(p))), path: p, kind: 'evidence', scope: '.' };
     }
     const x = item && typeof item === 'object' ? item : {};
-    let p = String(x.path ?? x.file ?? x.filePath ?? x.relativePath ?? x.artifactPath ?? '').replaceAll('\\', '/');
-    if (p && path.isAbsolute(p)) p = rel(p);
-    if (p && !p.startsWith('.docgen/') && !fs.existsSync(path.join(root, p)) && fs.existsSync(path.join(evidenceDir, p))) p = rel(path.join(evidenceDir, p));
+    let p = canonicalEvidencePath(x.path ?? x.file ?? x.filePath ?? x.relativePath ?? x.artifactPath ?? '', evidenceDir);
     return {
       ...x,
       id: String(x.id ?? x.name ?? x.key ?? slug(p || `artifact-${i + 1}`)),
@@ -512,12 +788,21 @@ function normalizeEvidenceIndex() {
   }
   const seen = new Set();
   artifacts = artifacts.filter((a) => { const key = a.path; if (!key || seen.has(key)) return false; seen.add(key); return true; });
+  const ids = new Set();
+  for (const artifact of artifacts) {
+    artifact.id = slug(artifact.id);
+    if (ids.has(artifact.id)) throw new Error(`Duplicate evidence artifact id: ${artifact.id}`);
+    ids.add(artifact.id);
+    const artifactFile = path.join(root, artifact.path);
+    if (!fs.existsSync(artifactFile) || !fs.statSync(artifactFile).isFile()) throw new Error(`Evidence artifact does not exist: ${artifact.path}`);
+    if (artifactFile.endsWith('.json')) { try { readJson(artifactFile); } catch (e) { throw new Error(`Invalid evidence JSON ${artifact.path}: ${e.message}`); } }
+  }
   const canonical = {
-    ...obj,
     schemaVersion: '1.0',
-    generatedAt: obj.generatedAt ?? now(),
+    generatedAt: obj.generatedAt ?? obj.createdAt ?? obj.updatedAt ?? now(),
     repository: obj.repository ?? {},
-    artifacts
+    artifacts: artifacts.map((a) => ({ id: a.id, path: a.path, kind: a.kind, scope: a.scope, summary: a.summary, factCount: a.factCount })).map((a) => Object.fromEntries(Object.entries(a).filter(([,v]) => v !== undefined))),
+    metadata: obj.metadata ?? {}
   };
   const changed = !Array.isArray(obj.artifacts) || JSON.stringify(obj.artifacts) !== JSON.stringify(artifacts);
   writeJson(evidenceIndexPath, canonical);
@@ -532,9 +817,11 @@ function validateMermaidOnly(text, pagePath) {
 function loadOptionalJson(file, fallback) { return fs.existsSync(file) ? readJson(file) : fallback; }
 function manifestCoverageGaps(manifest) {
   const tags = new Set((manifest.pages ?? []).flatMap((p) => p.coverageTags ?? []));
-  const business = loadOptionalJson(businessPath, { businessRules: [], branchConditions: [], lifecycles: [], capabilities: [] });
-  const flows = loadOptionalJson(flowsPath, { businessFlows: [], controlFlows: [], requestFlows: [], trafficFlows: [], dataFlows: [], eventFlows: [] });
-  const catalogs = loadOptionalJson(catalogsPath, { endpoints: [], messageHandlers: [], externalDependencies: [] });
+  // Normalize in memory as well as at stage commit boundaries. This keeps manual
+  // preflight/validate resilient when a repository still contains pre-v0.6 aliases.
+  const business = normalizeBusinessObject(loadOptionalJson(businessPath, {}));
+  const flows = normalizeFlowsObject(loadOptionalJson(flowsPath, {}));
+  const catalogs = normalizeCatalogsObject(loadOptionalJson(catalogsPath, {}));
   const required = [['system-overview', true], ['architecture', true]];
   if ((business.capabilities ?? []).length) required.push(['business-domain', true]);
   if ((business.businessRules ?? []).length) required.push(['business-rules', true]);
@@ -566,8 +853,30 @@ function writeNavigationSummary(manifest) {
   fs.writeFileSync(path.join(root, 'docs', 'SUMMARY.md'), lines.join('\n').trimEnd() + '\n');
 }
 
+function reconcileGeneratedPage(page) {
+  const expected = pageFile(page);
+  if (fs.existsSync(expected)) return expected;
+  const docsRoot = path.join(root, 'docs');
+  if (!fs.existsSync(docsRoot)) return expected;
+  const expectedKey = canonicalPagePath(page.path).replace(/^docs\//, '').replace(/\.md$/i, '').toLowerCase();
+  const candidates = listFilesRecursive(docsRoot).filter((f) => /(?:\.md|\.markdown)?$/i.test(f)).filter((f) => {
+    const rp = rel(f).replace(/^docs\//, '').replace(/(?:\.md|\.markdown)$/i, '').toLowerCase();
+    const base = slug(path.basename(rp));
+    return rp === expectedKey || base === slug(page.id) || base === slug(page.title);
+  });
+  const manifest = fs.existsSync(manifestPath) ? normalizeManifest(false) : { pages: [] };
+  const owned = new Set((manifest.pages ?? []).filter((p) => p.id !== page.id).map((p) => canonicalPagePath(p.path)));
+  const unique = candidates.filter((f) => !owned.has(rel(f)));
+  if (unique.length === 1) {
+    fs.mkdirSync(path.dirname(expected), { recursive: true });
+    fs.renameSync(unique[0], expected);
+    console.log(`[docgen] reconciled generated page path: ${rel(unique[0])} -> ${page.path}`);
+  }
+  return expected;
+}
+
 function validatePageFile(page) {
-  const file = path.join(root, page.path);
+  const file = reconcileGeneratedPage(page);
   if (!fs.existsSync(file)) throw new Error(`Missing generated page: ${page.path}`);
   const text = fs.readFileSync(file, 'utf8');
   if (!/^#\s+\S/m.test(text)) throw new Error(`${page.path} has no H1 heading`);
@@ -601,7 +910,7 @@ function validateStatic() {
   validateSkills(errors);
   const requiredAgents = ['doc-discoverer', 'doc-architect', 'doc-domain-analyst', 'doc-planner', 'doc-writer', 'doc-auditor'];
   for (const a of requiredAgents) if (!fs.existsSync(path.join(commandCodeHome, 'agents', `${a}.md`))) errors.push(`Missing global agent: ${a}`);
-  const requiredCommands = ['docgen-init', 'docgen-doctor', 'docgen-discover', 'docgen-analyze', 'docgen-plan', 'docgen-generate', 'docgen-audit', 'docgen-fix', 'docgen-update', 'docgen-status', 'docgen-enrich', 'docgen-quality', 'docgen-semantics', 'docgen-preflight', 'docgen-resume'];
+  const requiredCommands = ['docgen-init', 'docgen-doctor', 'docgen-discover', 'docgen-analyze', 'docgen-plan', 'docgen-generate', 'docgen-audit', 'docgen-fix', 'docgen-update', 'docgen-status', 'docgen-enrich', 'docgen-quality', 'docgen-semantics', 'docgen-preflight', 'docgen-resume', 'docgen-contract-test'];
   for (const c of requiredCommands) if (!fs.existsSync(path.join(commandCodeHome, 'commands', `${c}.md`))) errors.push(`Missing global command: ${c}`);
   for (const prompt of ['discover.md', 'analyze.md', 'semantics.md', 'plan.md', 'generate.md', 'enrich.md', 'audit.md', 'fix.md', 'update-impact.md', 'generate-batch.md', 'enrich-batch.md', 'audit-batch.md']) if (!fs.existsSync(assetFile('prompts', prompt))) errors.push(`Missing prompt: ${prompt}`);
   for (const schema of ['evidence-artifact.schema.json', 'evidence-index.schema.json', 'component.schema.json', 'workflow.schema.json', 'system.schema.json', 'business.schema.json', 'flows.schema.json', 'catalogs.schema.json', 'manifest.schema.json', 'audit-page.schema.json', 'audit-index.schema.json', 'update-plan.schema.json']) {
@@ -617,11 +926,11 @@ function validateStatic() {
 }
 function validateGenerated() {
   const errors = [];
-  try { if (fs.existsSync(evidenceIndexPath)) validateJsonFile(evidenceIndexPath, ['schemaVersion', 'artifacts']); } catch (e) { errors.push(e.message); }
-  try { if (fs.existsSync(systemPath)) validateJsonFile(systemPath, ['schemaVersion', 'components', 'relationships', 'workflows', 'unknowns']); } catch (e) { errors.push(e.message); }
-  try { if (fs.existsSync(businessPath)) validateJsonFile(businessPath, ['schemaVersion', 'actors', 'capabilities', 'concepts', 'businessRules', 'decisions', 'branchConditions', 'lifecycles', 'invariants', 'useCases', 'unknowns']); } catch (e) { errors.push(e.message); }
-  try { if (fs.existsSync(flowsPath)) validateJsonFile(flowsPath, ['schemaVersion', 'businessFlows', 'controlFlows', 'requestFlows', 'trafficFlows', 'dataFlows', 'eventFlows']); } catch (e) { errors.push(e.message); }
-  try { if (fs.existsSync(catalogsPath)) validateJsonFile(catalogsPath, ['schemaVersion', 'endpoints', 'messageHandlers', 'externalDependencies', 'dataStores', 'scheduledJobs']); } catch (e) { errors.push(e.message); }
+  try { if (fs.existsSync(evidenceIndexPath)) normalizeEvidenceIndex(); } catch (e) { errors.push(e.message); }
+  try { if (fs.existsSync(systemPath)) normalizeJsonFile(systemPath, normalizeSystemObject, (obj) => assertCanonicalModel('system.json', obj, ['components', 'relationships', 'workflows', 'unknowns'])); } catch (e) { errors.push(e.message); }
+  try { if (fs.existsSync(businessPath)) normalizeJsonFile(businessPath, normalizeBusinessObject, (obj) => assertCanonicalModel('business.json', obj, ['actors', 'capabilities', 'concepts', 'businessRules', 'decisions', 'branchConditions', 'lifecycles', 'invariants', 'useCases', 'unknowns'])); } catch (e) { errors.push(e.message); }
+  try { if (fs.existsSync(flowsPath)) normalizeJsonFile(flowsPath, normalizeFlowsObject, (obj) => assertCanonicalModel('flows.json', obj, ['businessFlows', 'controlFlows', 'requestFlows', 'trafficFlows', 'dataFlows', 'eventFlows'])); } catch (e) { errors.push(e.message); }
+  try { if (fs.existsSync(catalogsPath)) normalizeJsonFile(catalogsPath, normalizeCatalogsObject, (obj) => assertCanonicalModel('catalogs.json', obj, ['endpoints', 'messageHandlers', 'externalDependencies', 'dataStores', 'scheduledJobs'])); } catch (e) { errors.push(e.message); }
   if (fs.existsSync(manifestPath)) {
     try {
       const manifest = normalizeManifest();
@@ -648,54 +957,92 @@ function validateGenerated() {
 
 async function doDiscover(scope = '.', progressLabel = '') {
   updateStage('discover', 'running', { scope });
-  await runCommandCode('discover', renderPrompt('discover.md', { SCOPE: scope }), scope, progressLabel);
-  const evidenceIndex = normalizeEvidenceIndex();
-  updateStage('discover', 'completed', { scope, artifactCount: evidenceIndex.artifacts.length });
+  try {
+    const evidenceIndex = await runContractStage('discover', [path.dirname(evidenceIndexPath)],
+      (reset) => runCommandCode('discover', renderPrompt('discover.md', { SCOPE: scope }), scope, progressLabel, { beforeRetry: reset }),
+      () => normalizeEvidenceIndex());
+    updateStage('discover', 'completed', { scope, artifactCount: evidenceIndex.artifacts.length });
+  } catch (e) { updateStage('discover', 'failed', { scope, error: e.message }); throw e; }
 }
 async function doAnalyze(scope = 'all current evidence', progressLabel = '') {
   if (!fs.existsSync(evidenceIndexPath)) fail('Run discover first.');
+  normalizeEvidenceIndex();
   updateStage('analyze', 'running', { scope });
-  await runCommandCode('analyze', renderPrompt('analyze.md', { SCOPE: scope }), scope, progressLabel);
-  validateJsonFile(systemPath, ['schemaVersion', 'components', 'relationships', 'workflows', 'unknowns']);
-  updateStage('analyze', 'completed', { scope });
+  try {
+    const system = await runContractStage('analyze', [systemPath],
+      (reset) => runCommandCode('analyze', renderPrompt('analyze.md', { SCOPE: scope }), scope, progressLabel, { beforeRetry: reset }),
+      () => normalizeJsonFile(systemPath, normalizeSystemObject, (obj) => assertCanonicalModel('system.json', obj, ['components', 'relationships', 'workflows', 'unknowns'])));
+    updateStage('analyze', 'completed', { scope, components: system.components.length, relationships: system.relationships.length, workflows: system.workflows.length });
+  } catch (e) { updateStage('analyze', 'failed', { scope, error: e.message }); throw e; }
 }
 async function doSemantics(progressLabel = '') {
   if (!fs.existsSync(systemPath)) fail('Run analyze first.');
+  normalizeJsonFile(systemPath, normalizeSystemObject, (obj) => assertCanonicalModel('system.json', obj, ['components', 'relationships', 'workflows', 'unknowns']));
   updateStage('semantics', 'running');
-  await runCommandCode('semantics', renderPrompt('semantics.md'), '', progressLabel);
-  validateJsonFile(businessPath, ['schemaVersion', 'actors', 'capabilities', 'concepts', 'businessRules', 'decisions', 'branchConditions', 'lifecycles', 'invariants', 'useCases', 'unknowns']);
-  validateJsonFile(flowsPath, ['schemaVersion', 'businessFlows', 'controlFlows', 'requestFlows', 'trafficFlows', 'dataFlows', 'eventFlows']);
-  validateJsonFile(catalogsPath, ['schemaVersion', 'endpoints', 'messageHandlers', 'externalDependencies', 'dataStores', 'scheduledJobs']);
-  updateStage('semantics', 'completed', {
-    endpoints: readJson(catalogsPath).endpoints.length,
-    messageHandlers: readJson(catalogsPath).messageHandlers.length,
-    externalDependencies: readJson(catalogsPath).externalDependencies.length
-  });
+  try {
+    const [business, flows, catalogs] = await runContractStage('semantics', [businessPath, flowsPath, catalogsPath],
+      (reset) => runCommandCode('semantics', renderPrompt('semantics.md'), '', progressLabel, { beforeRetry: reset }),
+      () => [
+        normalizeJsonFile(businessPath, normalizeBusinessObject, (obj) => assertCanonicalModel('business.json', obj, ['actors', 'capabilities', 'concepts', 'businessRules', 'decisions', 'branchConditions', 'lifecycles', 'invariants', 'useCases', 'unknowns'])),
+        normalizeJsonFile(flowsPath, normalizeFlowsObject, (obj) => assertCanonicalModel('flows.json', obj, ['businessFlows', 'controlFlows', 'requestFlows', 'trafficFlows', 'dataFlows', 'eventFlows'])),
+        normalizeJsonFile(catalogsPath, normalizeCatalogsObject, (obj) => assertCanonicalModel('catalogs.json', obj, ['endpoints', 'messageHandlers', 'externalDependencies', 'dataStores', 'scheduledJobs']))
+      ]);
+    updateStage('semantics', 'completed', { endpoints: catalogs.endpoints.length, messageHandlers: catalogs.messageHandlers.length, externalDependencies: catalogs.externalDependencies.length, businessRules: business.businessRules.length, flows: Object.values(flows).filter(Array.isArray).reduce((n, x) => n + x.length, 0) });
+  } catch (e) { updateStage('semantics', 'failed', { error: e.message }); throw e; }
 }
 async function doPlan(progressLabel = '') {
   if (!fs.existsSync(systemPath)) fail('Run analyze first.');
+  normalizeJsonFile(systemPath, normalizeSystemObject, (obj) => assertCanonicalModel('system.json', obj, ['components', 'relationships', 'workflows', 'unknowns']));
+  if (fs.existsSync(businessPath)) normalizeJsonFile(businessPath, normalizeBusinessObject, (obj) => assertCanonicalModel('business.json', obj, ['actors', 'capabilities', 'concepts', 'businessRules', 'decisions', 'branchConditions', 'lifecycles', 'invariants', 'useCases', 'unknowns']));
+  if (fs.existsSync(flowsPath)) normalizeJsonFile(flowsPath, normalizeFlowsObject, (obj) => assertCanonicalModel('flows.json', obj, ['businessFlows', 'controlFlows', 'requestFlows', 'trafficFlows', 'dataFlows', 'eventFlows']));
+  if (fs.existsSync(catalogsPath)) normalizeJsonFile(catalogsPath, normalizeCatalogsObject, (obj) => assertCanonicalModel('catalogs.json', obj, ['endpoints', 'messageHandlers', 'externalDependencies', 'dataStores', 'scheduledJobs']));
   updateStage('plan', 'running');
-  await runCommandCode('plan', renderPrompt('plan.md', { MISSING_COVERAGE: '' }), '', progressLabel);
-  let manifest = validateJsonFile(manifestPath, ['schemaVersion', 'navigation', 'pages']);
-  let gaps = manifestCoverageGaps(manifest);
-  if (gaps.length && isComprehensive()) {
-    console.log(`[docgen] manifest coverage gaps detected: ${gaps.join(', ')}. Running one bounded coverage-repair planning pass.`);
-    await runCommandCode('plan', renderPrompt('plan.md', { MISSING_COVERAGE: `The current manifest is missing these required evidence-backed coverage tags: ${gaps.join(', ')}. Reconcile the manifest so each is owned by an appropriate page; do not add unsupported content.` }), 'coverage-repair', progressLabel);
-    manifest = validateJsonFile(manifestPath, ['schemaVersion', 'navigation', 'pages']);
-    gaps = manifestCoverageGaps(manifest);
-  }
-  if (gaps.length) throw new Error(`Manifest coverage gaps remain: ${gaps.join(', ')}`);
-  manifest = normalizeManifest();
-  const preflight = manifestPreflight(manifest);
-  if (!preflight.valid) throw new Error(`Manifest preflight failed immediately after planning:
-- ${preflight.errors.join('\n- ')}
-Report: ${rel(preflightPath)}`);
-  writeNavigationSummary(manifest);
-  updateStage('plan', 'completed', { pageCount: manifest.pages.length, navigationGroups: manifest.navigation.length, preflight: 'passed' });
+  try {
+    await runContractStage('plan', [manifestPath],
+      (reset) => runCommandCode('plan', renderPrompt('plan.md', { MISSING_COVERAGE: '' }), '', progressLabel, { beforeRetry: reset }),
+      () => { const manifest = normalizeManifest(); const preflight = manifestPreflight(manifest, { includeCoverage: false }); if (!preflight.valid) throw new Error(`Manifest preflight failed:\n- ${preflight.errors.join('\n- ')}`); return manifest; });
+    let manifest = normalizeManifest();
+    let gaps = manifestCoverageGaps(manifest);
+    if (gaps.length && isComprehensive()) {
+      console.log(`[docgen] manifest coverage gaps detected: ${gaps.join(', ')}. Running one bounded coverage-repair planning pass.`);
+      await runContractStage('plan-coverage-repair', [manifestPath],
+        (reset) => runCommandCode('plan', renderPrompt('plan.md', { MISSING_COVERAGE: `The current manifest is missing these required evidence-backed coverage tags: ${gaps.join(', ')}. Reconcile the manifest so each is owned by an appropriate page; do not add unsupported content.` }), 'coverage-repair', progressLabel, { beforeRetry: reset }),
+        () => normalizeManifest());
+      manifest = normalizeManifest(); gaps = manifestCoverageGaps(manifest);
+    }
+    if (gaps.length) throw new Error(`Manifest coverage gaps remain: ${gaps.join(', ')}`);
+    const preflight = manifestPreflight(manifest);
+    if (!preflight.valid) throw new Error(`Manifest preflight failed immediately after planning:\n- ${preflight.errors.join('\n- ')}\nReport: ${rel(preflightPath)}`);
+    writeNavigationSummary(manifest);
+    updateStage('plan', 'completed', { pageCount: manifest.pages.length, navigationGroups: manifest.navigation.length, preflight: 'passed' });
+  } catch (e) { updateStage('plan', 'failed', { error: e.message }); throw e; }
 }
 function pageFile(page) { return path.join(root, canonicalPagePath(page.path)); }
 function pageIsValid(page) { try { validatePageFile(page); return true; } catch { return false; } }
 function pageCurrentHash(page) { return fileSha256(pageFile(page)); }
+function pageInputHash(page) {
+  const hash = crypto.createHash('sha256');
+  hash.update(JSON.stringify({ ...page, evidence: [...(page.evidence ?? [])].sort(), models: [...(page.models ?? [])].sort() }));
+  for (const ref of [...(page.evidence ?? []), ...(page.models ?? [])].sort()) {
+    const file = path.join(root, ref);
+    hash.update(`\n${ref}:`);
+    if (fs.existsSync(file) && fs.statSync(file).isFile()) hash.update(fs.readFileSync(file));
+    else hash.update('MISSING');
+  }
+  return hash.digest('hex');
+}
+function pageIsReusable(page) {
+  if (!pageIsValid(page)) return false;
+  const currentInputHash = pageInputHash(page);
+  const state = loadPageState().pages?.[page.id];
+  if (state?.generateInputHash === currentInputHash) return true;
+  if (!state?.generateInputHash && executionConfig().adoptLegacyValidPages) {
+    updatePageState(page.id, { generateStatus: 'completed', generatedAt: state?.generatedAt ?? now(), pageHash: pageCurrentHash(page), generateInputHash: currentInputHash, targetPath: page.path, adoptedLegacyValidPage: true });
+    console.log(`[docgen] adopted legacy valid page checkpoint: ${page.id}`);
+    return true;
+  }
+  return false;
+}
 function pageNeedsEnrichment(page) { try { return pageQualityReport(page).errors.length > 0; } catch { return true; } }
 function executionConfig() {
   const e = loadConfig().execution ?? {};
@@ -705,6 +1052,7 @@ function executionConfig() {
     enrichBatchSize: Math.max(1, Number(e.enrichBatchSize ?? 4)),
     resumeByDefault: e.resumeByDefault !== false,
     skipValidPages: e.skipValidPages !== false,
+    adoptLegacyValidPages: e.adoptLegacyValidPages !== false,
     stageTimeoutMinutes: e.stageTimeoutMinutes ?? {}
   };
 }
@@ -715,25 +1063,25 @@ function stageTimeoutMs(stage) {
 }
 async function doGenerate(id, progressLabel = '', allowEnrich = true, force = false) {
   const page = findPage(id);
-  if (!force && executionConfig().skipValidPages && pageIsValid(page)) {
+  if (!force && executionConfig().skipValidPages && pageIsReusable(page)) {
     console.log(`[docgen] SKIP generate:${id} — valid page already exists at ${page.path}`);
   } else {
     updatePageState(id, { generateStatus: 'running', targetPath: page.path });
     await runCommandCode('generate', renderPrompt('generate.md', { PAGE_JSON: JSON.stringify(page, null, 2) }), id, progressLabel);
     validatePageFile(page);
-    updatePageState(id, { generateStatus: 'completed', generatedAt: now(), pageHash: pageCurrentHash(page), targetPath: page.path });
+    updatePageState(id, { generateStatus: 'completed', generatedAt: now(), pageHash: pageCurrentHash(page), generateInputHash: pageInputHash(page), targetPath: page.path });
   }
   if (allowEnrich && qualityConfig().autoEnrich !== false && isComprehensive() && pageNeedsEnrichment(page)) await doEnrich(id, progressLabel, force);
 }
 async function doGenerateBatch(pages, progressLabel = '') {
-  const pending = pages.filter((p) => !(executionConfig().skipValidPages && pageIsValid(p)));
+  const pending = pages.filter((p) => !(executionConfig().skipValidPages && pageIsReusable(p)));
   for (const p of pages.filter((p) => !pending.includes(p))) console.log(`[docgen] SKIP generate:${p.id} — valid page already exists.`);
   if (!pending.length) return;
   for (const p of pending) updatePageState(p.id, { generateStatus: 'running', targetPath: p.path });
   await runCommandCode('generate', renderPrompt('generate-batch.md', { PAGES_JSON: JSON.stringify(pending, null, 2) }), pending.map((p) => p.id).join(','), progressLabel);
   const failures = [];
   for (const page of pending) {
-    try { validatePageFile(page); updatePageState(page.id, { generateStatus: 'completed', generatedAt: now(), pageHash: pageCurrentHash(page), targetPath: page.path }); }
+    try { validatePageFile(page); updatePageState(page.id, { generateStatus: 'completed', generatedAt: now(), pageHash: pageCurrentHash(page), generateInputHash: pageInputHash(page), targetPath: page.path }); }
     catch (e) { failures.push({ page, error: e.message }); updatePageState(page.id, { generateStatus: 'failed', error: e.message }); }
   }
   if (failures.length) {
@@ -839,7 +1187,7 @@ async function doGenerateAll(force = false) {
   const cfg = executionConfig();
   const batches = [];
   for (let i = 0; i < manifest.pages.length; i += cfg.generateBatchSize) batches.push(manifest.pages.slice(i, i + cfg.generateBatchSize));
-  const alreadyValid = manifest.pages.filter(pageIsValid).length;
+  const alreadyValid = manifest.pages.filter(pageIsReusable).length;
   console.log(`[docgen] execution plan: ${manifest.pages.length} pages, ${alreadyValid} already valid, up to ${batches.length} generation batch run(s); enrichment only for pages failing local quality gates.`);
   updateStage('generate', 'running', { pageCount: manifest.pages.length, batchCount: batches.length, alreadyValid });
   try {
@@ -859,42 +1207,67 @@ async function doGenerateAll(force = false) {
 function auditIsCurrent(page) {
   const audit = path.join(root, '.docgen', 'audit', 'pages', `${page.id}.json`);
   if (!fs.existsSync(audit) || !pageIsValid(page)) return false;
-  try { const report = readJson(audit); return report.pageHash === pageCurrentHash(page); } catch { return false; }
+  try { const report = normalizeJsonFile(audit, (obj) => normalizeAuditReportObject(obj, page), (obj) => assertCanonicalModel(`audit/${page.id}.json`, obj, ['findings'])); return report.pageId === page.id && report.pagePath === page.path && report.pageHash === pageCurrentHash(page) && report.inputHash === pageInputHash(page); } catch { return false; }
 }
 async function doAudit(id, progressLabel = '', force = false) {
   const page = findPage(id);
   if (!fs.existsSync(pageFile(page))) fail(`Generate page first: ${page.path}`);
   if (!force && auditIsCurrent(page)) { console.log(`[docgen] SKIP audit:${id} — current audit already matches page hash.`); return; }
-  await runCommandCode('audit', renderPrompt('audit.md', { PAGE_JSON: JSON.stringify(page, null, 2), PAGE_ID: page.id, PAGE_HASH: pageCurrentHash(page) }), id, progressLabel);
+  await runCommandCode('audit', renderPrompt('audit.md', { PAGE_JSON: JSON.stringify(page, null, 2), PAGE_ID: page.id, PAGE_HASH: pageCurrentHash(page), PAGE_INPUT_HASH: pageInputHash(page) }), id, progressLabel);
   const reportPath = path.join(root, '.docgen', 'audit', 'pages', `${id}.json`);
-  const report = validateJsonFile(reportPath, ['schemaVersion', 'pageId', 'pagePath', 'findings']);
-  if (!report.pageHash) { report.pageHash = pageCurrentHash(page); writeJson(reportPath, report); }
-  updatePageState(id, { auditStatus: 'completed', auditedAt: now(), auditHash: report.pageHash });
+  const report = normalizeJsonFile(reportPath, (obj) => normalizeAuditReportObject(obj, page, { defaultHashes: true }), (obj) => {
+    assertCanonicalModel(`audit/${id}.json`, obj, ['findings']);
+    if (obj.pageId !== page.id) throw new Error(`Audit report pageId ${obj.pageId} does not match ${page.id}.`);
+    if (obj.pagePath !== page.path) throw new Error(`Audit report pagePath ${obj.pagePath} does not match ${page.path}.`);
+    if (obj.pageHash !== pageCurrentHash(page)) throw new Error(`Audit report hash does not match the current page content.`);
+    if (obj.inputHash !== pageInputHash(page)) throw new Error(`Audit report input hash does not match current evidence/model inputs.`);
+  });
+  updatePageState(id, { auditStatus: 'completed', auditedAt: now(), auditHash: report.pageHash, auditInputHash: report.inputHash });
 }
 async function doAuditBatch(pages, progressLabel = '') {
   const pending = pages.filter((p) => !auditIsCurrent(p));
   for (const p of pages.filter((p) => !pending.includes(p))) console.log(`[docgen] SKIP audit:${p.id} — current audit exists.`);
   if (!pending.length) return;
-  await runCommandCode('audit', renderPrompt('audit-batch.md', { PAGES_JSON: JSON.stringify(pending.map((p) => ({ ...p, pageHash: pageCurrentHash(p) })), null, 2) }), pending.map((p) => p.id).join(','), progressLabel);
+  await runCommandCode('audit', renderPrompt('audit-batch.md', { PAGES_JSON: JSON.stringify(pending.map((p) => ({ ...p, pageHash: pageCurrentHash(p), inputHash: pageInputHash(p) })), null, 2) }), pending.map((p) => p.id).join(','), progressLabel);
   for (const page of pending) {
     const reportPath = path.join(root, '.docgen', 'audit', 'pages', `${page.id}.json`);
-    try { const report = validateJsonFile(reportPath, ['schemaVersion', 'pageId', 'pagePath', 'findings']); if (!report.pageHash) { report.pageHash = pageCurrentHash(page); writeJson(reportPath, report); } updatePageState(page.id, { auditStatus: 'completed', auditedAt: now(), auditHash: report.pageHash }); }
-    catch { await doAudit(page.id, 'individual fallback after audit batch', true); }
+    try {
+      const report = normalizeJsonFile(reportPath, (obj) => normalizeAuditReportObject(obj, page, { defaultHashes: true }), (obj) => {
+        assertCanonicalModel(`audit/${page.id}.json`, obj, ['findings']);
+        if (obj.pageId !== page.id || obj.pagePath !== page.path) throw new Error('Audit report identity mismatch.');
+        if (obj.pageHash !== pageCurrentHash(page)) throw new Error('Audit report hash is stale.');
+        if (obj.inputHash !== pageInputHash(page)) throw new Error('Audit report input hash is stale.');
+      });
+      updatePageState(page.id, { auditStatus: 'completed', auditedAt: now(), auditHash: report.pageHash, auditInputHash: report.inputHash });
+    } catch { await doAudit(page.id, 'individual fallback after audit batch', true); }
   }
 }
 function rebuildAuditIndex() {
   const dir = path.join(root, '.docgen', 'audit', 'pages');
   const pages = [];
+  const invalidReports = [];
   const counts = { critical: 0, high: 0, medium: 0, low: 0 };
+  const manifest = fs.existsSync(manifestPath) ? normalizeManifest(false) : { pages: [] };
+  const byId = new Map((manifest.pages ?? []).map((p) => [p.id, p]));
   if (fs.existsSync(dir)) for (const name of fs.readdirSync(dir)) {
     if (!name.endsWith('.json')) continue;
+    const file = path.join(dir, name);
     try {
-      const report = readJson(path.join(dir, name));
-      pages.push({ pageId: report.pageId, pagePath: report.pagePath, findingCount: report.findings?.length ?? 0 });
-      for (const f of report.findings ?? []) if (f.severity in counts) counts[f.severity]++;
-    } catch {}
+      const raw = readJson(file);
+      const candidateId = slug(raw.pageId ?? raw.pageID ?? raw.id ?? path.basename(name, '.json'));
+      const page = byId.get(candidateId);
+      if (!page) throw new Error(`unknown page id ${candidateId}`);
+      const report = normalizeJsonFile(file, (obj) => normalizeAuditReportObject(obj, page), (obj) => {
+        assertCanonicalModel(`audit/${page.id}.json`, obj, ['findings']);
+        if (obj.pageId !== page.id || obj.pagePath !== page.path) throw new Error('identity mismatch');
+      });
+      pages.push({ pageId: report.pageId, pagePath: report.pagePath, pageHash: report.pageHash, inputHash: report.inputHash, findingCount: report.findings.length });
+      for (const f of report.findings) if (f.severity in counts) counts[f.severity]++;
+    } catch (e) { invalidReports.push({ file: rel(file), error: e.message }); }
   }
-  writeJson(auditIndexPath, { schemaVersion: '1.0', generatedAt: now(), pages, summary: counts });
+  const index = { schemaVersion: '1.0', generatedAt: now(), pages, summary: counts, invalidReports };
+  writeJson(auditIndexPath, index);
+  if (invalidReports.length) throw new Error(`Invalid audit report(s):\n- ${invalidReports.map((x) => `${x.file}: ${x.error}`).join('\n- ')}`);
   return counts;
 }
 async function doAuditAll() {
@@ -921,7 +1294,7 @@ async function doFixAll() {
   for (const page of manifest.pages) {
     const audit = path.join(root, '.docgen', 'audit', 'pages', `${page.id}.json`);
     if (!fs.existsSync(audit)) continue;
-    const report = readJson(audit);
+    const report = normalizeJsonFile(audit, (obj) => normalizeAuditReportObject(obj, page), (obj) => assertCanonicalModel(`audit/${page.id}.json`, obj, ['findings']));
     if ((report.findings ?? []).length) { printItemProgress('fix', manifest.pages.indexOf(page) + 1, manifest.pages.length, page.id); await doFix(page.id, `page ${manifest.pages.indexOf(page) + 1}/${manifest.pages.length}`); fixed.push(page.id); }
   }
   return fixed;
@@ -967,8 +1340,10 @@ function changedPaths() {
 async function doUpdate(explicitPaths) {
   const changed = explicitPaths.length ? explicitPaths : changedPaths();
   if (!changed.length) { console.log('No source changes detected since the last snapshot.'); return; }
-  await runCommandCode('update-impact', renderPrompt('update-impact.md', { CHANGED_PATHS_JSON: JSON.stringify(changed, null, 2) }), changed.join(', '));
-  const plan = validateJsonFile(path.join(root, '.docgen', 'plan', 'update-plan.json'), ['changedPaths', 'affectedEvidenceScopes', 'affectedModels', 'affectedPageIds']);
+  const updatePlanPath = path.join(root, '.docgen', 'plan', 'update-plan.json');
+  const plan = await runContractStage('update-impact', [updatePlanPath],
+    (reset) => runCommandCode('update-impact', renderPrompt('update-impact.md', { CHANGED_PATHS_JSON: JSON.stringify(changed, null, 2) }), changed.join(', '), '', { beforeRetry: reset }),
+    () => normalizeJsonFile(updatePlanPath, (obj) => normalizeUpdatePlanObject(obj, changed), (obj) => assertCanonicalModel('update-plan.json', obj, ['changedPaths', 'affectedEvidenceScopes', 'affectedModels', 'affectedPageIds', 'rationale'])));
   const scopes = plan.affectedEvidenceScopes?.length ? plan.affectedEvidenceScopes : changed;
   for (const scope of scopes) await doDiscover(scope);
   await doAnalyze(`incremental changes: ${changed.join(', ')}`);
@@ -982,13 +1357,65 @@ async function doUpdate(explicitPaths) {
   doSnapshot();
 }
 
+function validateStageArtifact(stage) {
+  if (stage === 'discover') return normalizeEvidenceIndex();
+  if (stage === 'analyze') return normalizeJsonFile(systemPath, normalizeSystemObject, (obj) => assertCanonicalModel('system.json', obj, ['components', 'relationships', 'workflows', 'unknowns']));
+  if (stage === 'semantics') return [
+    normalizeJsonFile(businessPath, normalizeBusinessObject, (obj) => assertCanonicalModel('business.json', obj, ['actors', 'capabilities', 'concepts', 'businessRules', 'decisions', 'branchConditions', 'lifecycles', 'invariants', 'useCases', 'unknowns'])),
+    normalizeJsonFile(flowsPath, normalizeFlowsObject, (obj) => assertCanonicalModel('flows.json', obj, ['businessFlows', 'controlFlows', 'requestFlows', 'trafficFlows', 'dataFlows', 'eventFlows'])),
+    normalizeJsonFile(catalogsPath, normalizeCatalogsObject, (obj) => assertCanonicalModel('catalogs.json', obj, ['endpoints', 'messageHandlers', 'externalDependencies', 'dataStores', 'scheduledJobs']))
+  ];
+  if (stage === 'plan') return requireManifestPreflight();
+  return true;
+}
+function stageCheckpointValid(stage) {
+  try { validateStageArtifact(stage); return true; } catch (e) { console.warn(`[docgen] checkpoint ${stage} is not reusable: ${e.message}`); return false; }
+}
+function contractSelfTest() {
+  const results = [];
+  const check = (name, fn) => {
+    try { fn(); results.push({ name, status: 'passed' }); console.log(`PASS contract ${name}`); }
+    catch (e) { results.push({ name, status: 'failed', error: e.message }); console.error(`FAIL contract ${name}: ${e.message}`); }
+  };
+  check('system aliases', () => assertCanonicalModel('system', normalizeSystemObject({ services: [{}], dependencies: [], processes: [], openQuestions: [] }), ['components','relationships','workflows','unknowns']));
+  check('business aliases', () => assertCanonicalModel('business', normalizeBusinessObject({ roles: [], businessCapabilities: [], domainConcepts: [], rules: [{}], decisionPoints: [], conditions: [], stateMachines: [], constraints: [], scenarios: [], gaps: [] }), ['actors','capabilities','concepts','businessRules','decisions','branchConditions','lifecycles','invariants','useCases','unknowns']));
+  check('flow aliases', () => assertCanonicalModel('flows', normalizeFlowsObject({ flows: [{ type: 'request' }, { type: 'data' }, { type: 'event' }] }), ['businessFlows','controlFlows','requestFlows','trafficFlows','dataFlows','eventFlows']));
+  check('catalog aliases', () => assertCanonicalModel('catalogs', normalizeCatalogsObject({ routes: [{}], handlers: [{}], integrations: [{}], databases: [{}], cronJobs: [{}] }), ['endpoints','messageHandlers','externalDependencies','dataStores','scheduledJobs']));
+  check('update-plan aliases', () => assertCanonicalModel('update', normalizeUpdatePlanObject({ changedFiles:['a'], scopes:['.'], models:['system'], pages:['overview'], reasons:['x'] }), ['changedPaths','affectedEvidenceScopes','affectedModels','affectedPageIds','rationale']));
+  check('page path variants', () => { for (const x of ['orientation/overview','/orientation/overview.md','docs/orientation/overview','docs/orientation/overview.md']) if (canonicalPagePath(x) !== 'docs/orientation/overview.md') throw new Error(x); });
+  check('audit aliases', () => { const page = { id: 'overview', path: 'docs/orientation/overview.md' }; const x = normalizeAuditReportObject({ id: 'overview', path: 'orientation/overview', hash: 'abc', inputHash: 'def', issues: ['x'] }, page); if (x.pagePath !== page.path || x.findings.length !== 1) throw new Error('audit normalization'); });
+  check('normalizer idempotence', () => {
+    const samples = [
+      [normalizeSystemObject, { services:[{id:'a'}], modules:[{id:'b'}], dependencies:[], processes:[], gaps:[] }],
+      [normalizeBusinessObject, { roles:[], rules:[{id:'r'}], policies:[{id:'p'}] }],
+      [normalizeFlowsObject, { flows:[{id:'q',type:'request'}], httpFlows:[{id:'q',type:'request'}] }],
+      [normalizeCatalogsObject, { consumers:[{id:'c'}], producers:[{id:'p'}], listeners:[{id:'l'}] }],
+      [normalizeUpdatePlanObject, { changedFiles:['a'], pages:['x'] }]
+    ];
+    for (const [fn, input] of samples) { const once = fn(input); const twice = fn(once); if (JSON.stringify(once) !== JSON.stringify(twice)) throw new Error(`${fn.name} is not idempotent`); }
+  });
+  check('catalog losslessness', () => { const x = normalizeCatalogsObject({ consumers:[{id:'c'}], producers:[{id:'p'}], listeners:[{id:'l'}], kafkaHandlers:[{id:'k'}] }); if (x.messageHandlers.length < 3) throw new Error(`expected at least 3 handlers, got ${x.messageHandlers.length}`); });
+  check('evidence path canonicalization', () => { const p = canonicalEvidencePath('repo.json', path.join(root,'.docgen','evidence')); if (p !== '.docgen/evidence/repo.json') throw new Error(p); });
+  const failures = results.filter((x) => x.status === 'failed');
+  const report = {
+    schemaVersion: '1.0', kitVersion, checkedAt: now(), passed: failures.length === 0,
+    invariants: ['canonicalization', 'idempotence', 'losslessness', 'path-safety', 'identity-consistency', 'transactional-restore'],
+    boundaries: ['discover/evidence-index', 'analyze/system-model', 'semantics/business-model', 'semantics/flow-model', 'semantics/catalog-model', 'plan/manifest', 'generate/markdown-path', 'audit/report', 'update/impact-plan'],
+    tests: results
+  };
+  writeJson(path.join(root, '.docgen', 'state', 'contract-report.json'), report);
+  if (failures.length) throw new Error(`Contract self-test failed:\n- ${failures.map((x) => `${x.name}: ${x.error}`).join('\n- ')}`);
+  console.log('Contract firewall self-test passed.');
+  console.log('Report: .docgen/state/contract-report.json');
+  return true;
+}
 function status() {
   const state = loadState();
   console.log(`DocGen Kit ${kitVersion}`);
   for (const stage of ['discover', 'analyze', 'semantics', 'plan', 'generate', 'audit']) console.log(`${stage.padEnd(10)} ${state.stages?.[stage]?.status ?? 'pending'}`);
   if (fs.existsSync(manifestPath)) {
-    const m = normalizeManifest(); const generated = (m.pages ?? []).filter(pageIsValid).length;
-    console.log(`pages      ${generated}/${m.pages?.length ?? 0} generated`);
+    const m = normalizeManifest(); const generated = (m.pages ?? []).filter(pageIsValid).length; const reusable = (m.pages ?? []).filter(pageIsReusable).length;
+    console.log(`pages      ${generated}/${m.pages?.length ?? 0} generated | ${reusable} reusable for current inputs`);
   }
   if (fs.existsSync(auditIndexPath)) {
     const a = readJson(auditIndexPath); console.log(`audit      ${JSON.stringify(a.summary ?? {})}`);
@@ -1084,6 +1511,7 @@ function printCompatibility(report) {
 }
 function doctor() {
   console.log(`Node.js: ${process.version}`);
+  contractSelfTest();
   const report = compatibilityReport();
   printCompatibility(report);
   if (!report.compatible) process.exit(1);
@@ -1161,6 +1589,7 @@ Project commands:
   docgen status
   docgen migrate                add new defaults without overwriting custom config
   docgen validate
+  docgen contract-test           run zero-token producer/consumer contract regression tests
   docgen discover [scope]
   docgen analyze [scope]
   docgen semantics              extract business/flow/catalog models
@@ -1203,7 +1632,8 @@ switch (command) {
   case 'compat': doctor(); break;
   case 'status': status(); break;
   case 'migrate': migrateProjectConfig(false); break;
-  case 'validate': if (!validateStatic() || !validateGenerated()) process.exit(1); break;
+  case 'validate': contractSelfTest(); if (!validateStatic() || !validateGenerated()) process.exit(1); break;
+  case 'contract-test': contractSelfTest(); break;
   case 'discover': await doDiscover(args.join(' ') || '.'); break;
   case 'analyze': await doAnalyze(args.join(' ') || 'all current evidence'); break;
   case 'semantics': await doSemantics(); break;
@@ -1222,15 +1652,16 @@ switch (command) {
     const fresh = args.includes('--fresh');
     console.log(`DocGen full pipeline | quality profile: ${qualityProfile()} | mode: ${fresh ? 'fresh' : 'resume'}`);
     const state = loadState();
-    const stageComplete = (name, artifact) => !fresh && state.stages?.[name]?.status === 'completed' && (!artifact || fs.existsSync(artifact));
-    if (stageComplete('discover', evidenceIndexPath)) console.log('[docgen] SKIP phase 1/7 discovery — completed evidence checkpoint exists.');
-    else { printItemProgress('phase', 1, 7, 'evidence discovery'); await doDiscover('.', 'phase 1/7'); }
-    if (stageComplete('analyze', systemPath)) console.log('[docgen] SKIP phase 2/7 analysis — completed system model exists.');
-    else { printItemProgress('phase', 2, 7, 'technical architecture analysis'); await doAnalyze('all current evidence', 'phase 2/7'); }
-    if (stageComplete('semantics', catalogsPath) && fs.existsSync(businessPath) && fs.existsSync(flowsPath)) console.log('[docgen] SKIP phase 3/7 semantics — completed semantic models exist.');
-    else { printItemProgress('phase', 3, 7, 'business, flow, and catalog semantics'); await doSemantics('phase 3/7'); }
-    if (stageComplete('plan', manifestPath)) { const m = requireManifestPreflight(); console.log(`[docgen] SKIP phase 4/7 planning — valid preflighted manifest exists (${m.pages.length} pages).`); }
-    else { printItemProgress('phase', 4, 7, 'multi-page documentation planning'); await doPlan('phase 4/7'); }
+    const stageComplete = (name, artifact) => !fresh && state.stages?.[name]?.status === 'completed' && (!artifact || fs.existsSync(artifact)) && stageCheckpointValid(name);
+    let upstreamReran = false;
+    if (!upstreamReran && stageComplete('discover', evidenceIndexPath)) console.log('[docgen] SKIP phase 1/7 discovery — completed evidence checkpoint exists.');
+    else { printItemProgress('phase', 1, 7, 'evidence discovery'); await doDiscover('.', 'phase 1/7'); upstreamReran = true; }
+    if (!upstreamReran && stageComplete('analyze', systemPath)) console.log('[docgen] SKIP phase 2/7 analysis — completed system model exists.');
+    else { printItemProgress('phase', 2, 7, 'technical architecture analysis'); await doAnalyze('all current evidence', 'phase 2/7'); upstreamReran = true; }
+    if (!upstreamReran && stageComplete('semantics', catalogsPath) && fs.existsSync(businessPath) && fs.existsSync(flowsPath)) console.log('[docgen] SKIP phase 3/7 semantics — completed semantic models exist.');
+    else { printItemProgress('phase', 3, 7, 'business, flow, and catalog semantics'); await doSemantics('phase 3/7'); upstreamReran = true; }
+    if (!upstreamReran && stageComplete('plan', manifestPath)) { const m = requireManifestPreflight(); console.log(`[docgen] SKIP phase 4/7 planning — valid preflighted manifest exists (${m.pages.length} pages).`); }
+    else { printItemProgress('phase', 4, 7, 'multi-page documentation planning'); await doPlan('phase 4/7'); upstreamReran = true; }
     const manifest = requireManifestPreflight(); console.log(`Plan contains ${manifest.pages.length} pages across ${manifest.navigation?.length ?? 0} navigation categories.`);
     printItemProgress('phase', 5, 7, 'batched page generation + targeted enrichment'); await doGenerateAll(fresh);
     printItemProgress('phase', 6, 7, 'batched independent audit'); await doAuditAll();

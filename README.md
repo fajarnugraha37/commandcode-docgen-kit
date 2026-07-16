@@ -38,48 +38,127 @@ Install the engine once. Initialize any number of repositories independently.
 
 ---
 
-## What's new in v0.5.0
+## What's new in v0.6.0
 
-v0.5.0 is a reliability and execution-efficiency release. It fixes the failure mode where a writer correctly created `docs/orientation/overview.md` but the manifest contained `orientation/overview`, causing validation to fail only after hours of discovery, analysis and planning.
+v0.6.0 is the **contract-firewall release**. It addresses the root class behind both expensive failures reported in earlier versions:
 
-Major additions:
+```text
+LLM producer emits a reasonable representation
+        │
+        ▼
+orchestrator assumes a different literal representation
+        │
+        ▼
+failure appears only after a costly stage has completed
+```
 
-- **canonical manifest paths**: `orientation/overview`, `/orientation/overview.md`, and `docs/orientation/overview.md` normalize to `docs/orientation/overview.md`;
-- **fail-fast manifest preflight** before the first page-generation request;
-- deterministic resolution of evidence/model IDs to exact repository-relative paths;
-- explicit rejection of unresolved inputs, duplicate ids/paths, unsafe paths and broken navigation before generation;
-- **resumable-by-default execution** with page-level checkpoints;
-- existing valid pages are skipped rather than regenerated;
-- current audit reports are reused when their recorded `pageHash` still matches;
-- generation, enrichment and audit are batched to reduce provider/API requests;
-- comprehensive enrichment now runs only for pages that fail deterministic local quality gates;
-- batch failure falls back only for missing/invalid pages rather than restarting the entire batch;
-- automatic provider retry for rate limit, network and API 5xx failures;
-- exponential backoff, jitter, visible cooldown countdown and per-attempt logs;
-- textual detection of rate-limit responses such as HTTP `429` even when a provider returns a generic exit code;
-- configurable stage timeouts to prevent a single hung process from running indefinitely;
-- new `docgen preflight` and `docgen resume` commands;
-- `docgen all` resumes by default; `docgen all --fresh` intentionally starts over;
-- state records generated counts, completed batches, failed stages and per-page hashes.
+The two observed examples were:
 
-The deep knowledge-base capabilities from the prior release remain: business rules, decisions, branch conditions, lifecycles, six flow types, endpoint/message/integration catalogs, deep multi-page navigation and Mermaid-only diagrams.
+- discovery wrote an evidence index using `files[]`, while the validator required `artifacts[]`;
+- planning/writing used `orientation/overview` versus `docs/orientation/overview.md`.
 
-### Recovery after a v0.4.x generation-path failure
+Those are no longer handled as isolated special cases. Every LLM-output boundary now passes through the same protocol:
 
-Upgrade the global engine, then continue the existing repository without deleting `.docgen` or `docs`:
+```text
+snapshot previous canonical artifact
+        │
+        ▼
+run bounded Command Code stage
+        │
+        ▼
+accept known semantic aliases
+        │
+        ▼
+normalize to one canonical representation
+        │
+        ▼
+validate identity, paths, references and invariants
+        │
+        ├── PASS → atomically commit canonical artifact
+        │
+        └── FAIL → quarantine raw output + restore previous artifact + stop
+```
+
+### Contract-firewall coverage
+
+| LLM stage | Canonical committed artifact | Examples of accepted variants |
+|---|---|---|
+| Discovery | `.docgen/evidence/index.json` with `artifacts[]` | `files`, `entries`, `documents`, `items` |
+| Architecture analysis | `.docgen/model/system.json` | `services→components`, `dependencies→relationships`, `processes→workflows` |
+| Business semantics | `.docgen/model/business.json` | `roles→actors`, `rules→businessRules`, `conditions→branchConditions` |
+| Flow semantics | `.docgen/model/flows.json` | generic typed `flows`, `httpFlows`, `networkFlows`, `messageFlows` |
+| Catalog semantics | `.docgen/model/catalogs.json` | `routes→endpoints`, producers/consumers/listeners→`messageHandlers`, integrations→`externalDependencies` |
+| Planning | `.docgen/plan/manifest.json` | `documents→pages`, `categories→navigation`, `outputPath→path` |
+| Page writing | `docs/**/*.md` | missing `docs/`, missing `.md`, uniquely reconcilable misplaced page |
+| Audit | `.docgen/audit/pages/<id>.json` | `issues→findings`, `id→pageId`, `path→pagePath`, `hash→pageHash` |
+| Incremental update | `.docgen/plan/update-plan.json` | `changedFiles`, `scopes`, `models`, `pages`, `reasons` |
+
+Canonical writeback removes ambiguous aliases after normalization. Downstream agents therefore never receive both `outputPath` and `path`, or both `files` and `artifacts`, as competing sources of truth.
+
+### New zero-token regression command
 
 ```powershell
-# From the extracted v0.5.0 release
+docgen contract-test
+```
+
+This does not call an LLM provider. It tests:
+
+- alias normalization;
+- canonical page paths;
+- normalizer idempotence: `normalize(normalize(x)) == normalize(x)`;
+- catalog losslessness across producers, consumers and listeners;
+- audit identity normalization;
+- evidence-path safety;
+- canonical update-plan normalization.
+
+The result is stored in:
+
+```text
+.docgen/state/contract-report.json
+```
+
+`docgen doctor` and `docgen validate` run the same contract suite automatically.
+
+### Transactional stage recovery
+
+Discovery, analysis, semantics, planning and incremental-impact analysis are transactional. If Command Code exits unsuccessfully or exits successfully with malformed/incompatible output:
+
+1. partial output is copied to `.docgen/quarantine/<timestamp>-<stage>/`;
+2. the last valid canonical artifact is restored;
+3. downstream stages are not started;
+4. the terminal reports the quarantine path and exact contract cause.
+
+Before an automatic provider retry, stage output is reset to the original snapshot. A second attempt cannot inherit half-written JSON from the first attempt.
+
+### Dependency-aware resume
+
+A completed status is no longer enough to skip a stage. DocGen normalizes and validates the checkpoint before reuse. If an upstream checkpoint must rerun, all dependent semantic/planning stages rerun as well.
+
+Generated pages now record a hash of:
+
+```text
+page manifest contract
++ declared evidence content
++ declared model content
+```
+
+A page is skipped only while that input fingerprint remains current. Existing valid pages from v0.4/v0.5 are adopted once without regeneration, preserving already-spent tokens; future evidence/model changes invalidate only affected page checkpoints. Audit reuse additionally requires both the current page hash and the current input fingerprint.
+
+### Safe recovery from the reported failure
+
+```powershell
+# From the extracted v0.6.0 package
 .\install.ps1 -Force
 
 cd C:\path\to\your\repository
 
 docgen migrate
-docgen preflight
+docgen contract-test
+docgen validate
 docgen resume
 ```
 
-If the previous run already created `docs/orientation/overview.md`, v0.5.0 normalizes the old manifest path and skips that valid page. Discovery, analysis, semantics and planning checkpoints are also reused when their artifacts are present.
+Do not delete `.docgen` or `docs`. A page already generated as `docs/orientation/overview.md` is canonicalized/adopted and will not be regenerated solely because an older manifest omitted `docs/` or `.md`.
 
 ## Table of contents
 
@@ -101,6 +180,7 @@ If the previous run already created `docs/orientation/overview.md`, v0.5.0 norma
 14. [Global slash commands](#global-slash-commands)
 15. [CLI command reference](#cli-command-reference)
 16. [Fail-fast preflight and canonical paths](#fail-fast-preflight-and-canonical-paths)
+17. [Contract firewall and transactional artifacts](#contract-firewall-and-transactional-artifacts)
 17. [Resumability, batching, and checkpoints](#resumability-batching-and-checkpoints)
 18. [Rate limits, retries, and provider failures](#rate-limits-retries-and-provider-failures)
 16. [Evidence model](#evidence-model)
@@ -182,7 +262,7 @@ DocGen does not require a particular renderer.
 
 Earlier versions of the kit copied the entire engine into every target repository. That model is useful for a fully self-contained team-owned repository, but it is inefficient when one user wants to use the same documentation system across many repositories.
 
-The default architecture in v0.5.0 is therefore:
+The default architecture in v0.6.0 is therefore:
 
 ```text
 install once globally
@@ -320,10 +400,10 @@ Extract the release ZIP first.
 
 ```powershell
 Expand-Archive `
-  .\commandcode-docgen-kit-0.5.0.zip `
+  .\commandcode-docgen-kit-0.6.0.zip `
   -DestinationPath .\commandcode-docgen-kit
 
-cd .\commandcode-docgen-kit\commandcode-docgen-kit-0.5.0
+cd .\commandcode-docgen-kit\commandcode-docgen-kit-0.6.0
 
 .\install.ps1
 ```
@@ -331,8 +411,8 @@ cd .\commandcode-docgen-kit\commandcode-docgen-kit-0.5.0
 ## macOS / Linux
 
 ```bash
-unzip commandcode-docgen-kit-0.5.0.zip
-cd commandcode-docgen-kit-0.5.0
+unzip commandcode-docgen-kit-0.6.0.zip
+cd commandcode-docgen-kit-0.6.0
 ./install.sh
 ```
 
@@ -554,7 +634,7 @@ docgen snapshot
 
 # Live progress, heartbeat, logs, and error visibility
 
-DocGen v0.5.0 does not run Command Code as a silent blocking child process. Every LLM-backed stage is monitored as a live asynchronous process.
+DocGen v0.6.0 does not run Command Code as a silent blocking child process. Every LLM-backed stage is monitored as a live asynchronous process.
 
 A run now looks like:
 
@@ -687,7 +767,7 @@ Command Code reached --max-turns
 
 # Comprehensive quality profile
 
-The default v0.5.0 profile is:
+The default v0.6.0 profile is:
 
 ```json
 {
@@ -1794,9 +1874,93 @@ docgen generate --all
 
 `docgen all` and `docgen resume` invoke the same preflight automatically.
 
+# Contract firewall and transactional artifacts
+
+Prompt instructions are soft constraints. v0.6.0 therefore does not trust an LLM to reproduce an exact JSON spelling or output-path notation.
+
+## Single representation principle
+
+LLM output may contain aliases during the uncommitted stage, but the committed artifact contains only canonical fields. Examples:
+
+```text
+UNCOMMITTED                COMMITTED
+files[]                    artifacts[]
+services[]                 components[]
+rules[]                    businessRules[]
+handlers/consumers         messageHandlers[]
+outputPath                 path
+issues[]                   findings[]
+```
+
+This prevents a downstream cheap model from choosing a stale alias over the authoritative value.
+
+## Idempotence invariant
+
+Every normalizer must satisfy:
+
+```text
+normalize(normalize(x)) == normalize(x)
+```
+
+Without this invariant, repeatedly validating a flow model could duplicate request/data/event flows. The built-in contract suite tests this behavior.
+
+## Stage transaction
+
+The following stages use snapshot/normalize/validate/commit semantics:
+
+- `discover`;
+- `analyze`;
+- `semantics`;
+- `plan` and coverage repair;
+- `update-impact`.
+
+Provider failure, malformed JSON and incompatible semantic shapes all follow the same rollback path.
+
+## Quarantine
+
+Rejected raw or partial output is retained for diagnosis:
+
+```text
+.docgen/quarantine/
+└── <timestamp>-<stage>/
+    ├── <captured-artifact>
+    └── error.json
+```
+
+The previous valid artifact is restored before the command exits.
+
+## Checkpoint validation and dependency invalidation
+
+`docgen resume` performs real artifact validation, not only status inspection. If `system.json` is invalid, analysis reruns and forces semantics and planning to rerun. It does not continue with stale downstream models.
+
+## Page input fingerprints
+
+`.docgen/state/pages.json` records `generateInputHash` for each page. The hash covers the normalized page contract and every declared evidence/model file. A structurally valid Markdown file is not considered current when its inputs have changed.
+
+For migration, a valid page without an old input hash is adopted once. This avoids repaying the generation cost merely to create the new checkpoint metadata.
+
+## Audit input fingerprints
+
+An audit report is current only when both are equal:
+
+```text
+report.pageHash  == current Markdown hash
+report.inputHash == current page/evidence/model input hash
+```
+
+Thus a page whose text is unchanged but whose underlying architecture model changed is audited again.
+
+## Contract commands
+
+```powershell
+docgen contract-test   # zero-token deterministic regression suite
+docgen validate        # contract suite + static/generated artifact validation
+docgen doctor          # runtime compatibility + contract suite
+```
+
 # Resumability, batching, and checkpoints
 
-v0.5.0 is resumable by default.
+v0.6.0 is resumable by default.
 
 ```powershell
 docgen resume
@@ -1847,7 +2011,7 @@ v0.4.x worst-case baseline
 into:
 
 ```text
-v0.5.0 default baseline
+v0.6.0 default baseline
 ceil(59 / 4) generation batches = 15
 ceil(59 / 6) audit batches      = 10
 enrichment                      = only pages failing local quality gates
@@ -1863,7 +2027,7 @@ docgen all --fresh
 
 # Rate limits, retries, and provider failures
 
-Command Code documents rate-limit failures as exit code `5`; connection failures use `6`, API 5xx failures use `7`, and max-turn exhaustion uses `8`. v0.5.0 handles `5`, `6`, and `7` as retryable by default. It also detects common provider text such as `429`, `rate limit exceeded`, `too many requests`, and `quota exceeded` when a provider reports a generic exit code.
+Command Code documents rate-limit failures as exit code `5`; connection failures use `6`, API 5xx failures use `7`, and max-turn exhaustion uses `8`. v0.6.0 handles `5`, `6`, and `7` as retryable by default. It also detects common provider text such as `429`, `rate limit exceeded`, `too many requests`, and `quota exceeded` when a provider reports a generic exit code.
 
 Default policy:
 
@@ -2547,7 +2711,7 @@ For a team that needs exact engine reproducibility inside the repository, use th
 
 ## Automatic additive migration from v0.3.x project config
 
-When v0.5.0 runs inside a repository initialized by an older global-first release, it additively merges new defaults into `.docgen/config/documentation.json`. Existing custom scalar values and existing array entries are preserved; new page types, audiences, semantics turn-budget defaults, Mermaid-only quality settings, and knowledge-base settings are added. The project marker is updated to the current kit version.
+When v0.6.0 runs inside a repository initialized by an older global-first release, it additively merges new defaults into `.docgen/config/documentation.json`. Existing custom scalar values and existing array entries are preserved; new page types, audiences, semantics turn-budget defaults, Mermaid-only quality settings, and knowledge-base settings are added. The project marker is updated to the current kit version.
 
 You can run the migration explicitly:
 
@@ -2561,18 +2725,18 @@ This avoids `docgen init --force`, which could overwrite project-owned configura
 
 ## Migrating from v0.1.x project-local installs
 
-Version 0.1.x installed the complete engine inside each repository. Version 0.5.0 defaults to a global engine.
+Version 0.1.x installed the complete engine inside each repository. Version 0.6.0 defaults to a global engine.
 
 Recommended migration:
 
 ```bash
-# 1. Install v0.5.0 globally once
+# 1. Install v0.6.0 globally once
 node install.mjs --force
 
 # 2. Enter an existing v0.1.x repository
 cd /path/to/repository
 
-# 3. Add the v0.5.0 project marker/template without replacing existing config
+# 3. Add the v0.6.0 project marker/template without replacing existing config
 docgen init
 
 # 4. Verify the global runtime
@@ -2768,7 +2932,7 @@ Do not delete the generated page or rerun discovery. The canonical path is repai
 
 ## Provider rate limit or HTTP 429
 
-v0.5.0 retries automatically with visible exponential backoff. Review the attempt logs in `.docgen/runs/`. Reduce other concurrent Command Code sessions and lower batch sizes only when the provider still rejects batched requests.
+v0.6.0 retries automatically with visible exponential backoff. Review the attempt logs in `.docgen/runs/`. Reduce other concurrent Command Code sessions and lower batch sizes only when the provider still rejects batched requests.
 
 To make the policy more conservative:
 
@@ -2790,7 +2954,7 @@ To make the policy more conservative:
 
 ## `docgen all` appears to hang or stays quiet
 
-v0.5.0 prints a heartbeat while every Command Code child process is alive. You should see output similar to:
+v0.6.0 prints a heartbeat while every Command Code child process is alive. You should see output similar to:
 
 ```text
 [docgen] discover:. RUNNING | elapsed 1m 20s | pid 18420 | changed artifacts 7
@@ -3173,7 +3337,7 @@ For a repository that requires an exact frozen engine version, use the self-cont
 
 # Compatibility notes
 
-The v0.5.0 architecture intentionally aligns with Command Code user-level and project-level extension scopes:
+The v0.6.0 architecture intentionally aligns with Command Code user-level and project-level extension scopes:
 
 ```text
 User-level reusable components:
@@ -3304,7 +3468,7 @@ This workflow preserves the most important principle of the system:
 
 # Deep system knowledge-base target
 
-DocGen v0.5.0 does **not** treat the two benchmark home pages as the complete target. A Mintlify-style site is a hierarchy of categories, pages, and deep sections. DocGen therefore optimizes for **breadth × depth**:
+DocGen v0.6.0 does **not** treat the two benchmark home pages as the complete target. A Mintlify-style site is a hierarchy of categories, pages, and deep sections. DocGen therefore optimizes for **breadth × depth**:
 
 ```text
 Repository
@@ -3387,7 +3551,7 @@ The discovery contract requires:
 }
 ```
 
-However, cheap models can still emit semantically equivalent shapes such as `files` or `entries`. v0.5.0 normalizes these variants after discovery. If no list exists, it scans `.docgen/evidence/**` and constructs canonical `artifacts[]` deterministically. The exact v0.3.0 failure:
+However, cheap models can still emit semantically equivalent shapes such as `files` or `entries`. v0.6.0 normalizes these variants after discovery. If no list exists, it scans `.docgen/evidence/**` and constructs canonical `artifacts[]` deterministically. The exact v0.3.0 failure:
 
 ```text
 Error: .docgen/evidence/index.json missing required key: artifacts

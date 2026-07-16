@@ -24,3 +24,4 @@ Check:
 Write/update only the audit artifact for this page. Never modify application source.
 
 Current page hash (copy to report as `pageHash`): {{PAGE_HASH}}
+Current evidence/model contract hash (copy to report as `inputHash`): {{PAGE_INPUT_HASH}}

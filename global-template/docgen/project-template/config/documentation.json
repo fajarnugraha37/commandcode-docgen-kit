@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.2",
+  "schemaVersion": "1.3",
   "projectName": "",
   "outputRoot": "docs",
   "discoveryScopes": [
@@ -171,7 +171,8 @@
       "audit": 15,
       "fix": 15,
       "update-impact": 15
-    }
+    },
+    "adoptLegacyValidPages": true
   },
   "retry": {
     "enabled": true,
