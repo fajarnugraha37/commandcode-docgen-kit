@@ -22,11 +22,17 @@ function rowsForFacts(db, query, limit) {
   catch { return db.prepare('SELECT id,kind,name,path,line,statement,snippet,metadata,content_hash FROM facts WHERE lower(name||\' \'||statement||\' \'||path) LIKE ? LIMIT ?').all(`%${String(query).toLowerCase().split(/\s+/)[0] ?? ''}%`, limit); }
 }
 
-function rowsForModels(db, query, limit) {
-  const match = ftsQuery(query);
-  if (!match) return db.prepare('SELECT id,model,kind,name,statement,classification,confidence,evidence,payload,content_hash FROM model_items LIMIT ?').all(limit);
-  try { return db.prepare(`SELECT m.id,m.model,m.kind,m.name,m.statement,m.classification,m.confidence,m.evidence,m.payload,m.content_hash,bm25(model_fts) score FROM model_fts JOIN model_items m ON m.id=model_fts.id WHERE model_fts MATCH ? ORDER BY score LIMIT ?`).all(match, limit); }
-  catch { return []; }
+function rowsForModels(db, query, limit, allowedModels) {
+  if (allowedModels === false) return [];
+  const allowed = Array.isArray(allowedModels) ? new Set(allowedModels) : null; const fetchLimit = allowed ? Math.max(limit * 4, 1000) : limit;
+  const match = ftsQuery(query); let rows = [];
+  if (!match) rows = db.prepare('SELECT id,model,kind,name,statement,classification,confidence,evidence,payload,content_hash FROM model_items LIMIT ?').all(fetchLimit);
+  else {
+    try { rows = db.prepare(`SELECT m.id,m.model,m.kind,m.name,m.statement,m.classification,m.confidence,m.evidence,m.payload,m.content_hash,bm25(model_fts) score FROM model_fts JOIN model_items m ON m.id=model_fts.id WHERE model_fts MATCH ? ORDER BY score LIMIT ?`).all(match, fetchLimit); }
+    catch { rows = []; }
+  }
+  if (allowed) rows = rows.filter((row) => allowed.has(row.model));
+  return rows.slice(0, limit);
 }
 
 function compactFact(row) { return { id: row.id, kind: row.kind, name: row.name, path: row.path, line: row.line, statement: row.statement, snippet: row.snippet, metadata: JSON.parse(row.metadata || '{}'), hash: row.content_hash }; }
@@ -43,15 +49,15 @@ function fitBudget(base, facts, models, maxTokens) {
   return { selectedFacts, selectedModels, estimatedTokens: used };
 }
 
-export function compileContext(root, { stage, target = '', query = '', maxTokens, factLimit = 800, modelLimit = 500, metadata = {} }) {
+export function compileContext(root, { stage, target = '', query = '', maxTokens, factLimit = 800, modelLimit = 500, allowedModels = null, metadata = {} }) {
   const paths = projectPaths(root); const config = loadConfig(root); const configured = config.context?.maxTokens?.[stage] ?? config.context?.maxTokens?.default ?? 60000;
   const budget = Math.max(256, Number(maxTokens ?? configured)); const db = openDatabase(paths.database);
   const effectiveQuery = [STAGE_QUERIES[stage] ?? '', query, target].filter(Boolean).join(' ');
-  const facts = rowsForFacts(db, effectiveQuery, factLimit).map(compactFact); const models = rowsForModels(db, effectiveQuery, modelLimit).map(compactModel);
-  const base = { schemaVersion: '2.0', stage, target: target || null, query: effectiveQuery, metadata };
+  const facts = rowsForFacts(db, effectiveQuery, factLimit).map(compactFact); const models = rowsForModels(db, effectiveQuery, modelLimit, allowedModels).map(compactModel);
+  const base = { schemaVersion: '2.0', stage, target: target || null, query: effectiveQuery, modelScope: allowedModels === false ? [] : allowedModels, metadata };
   const fitted = fitBudget(base, facts, models, budget);
   const payload = { ...base, generatedAt: now(), tokenBudget: budget, estimatedTokens: fitted.estimatedTokens, facts: fitted.selectedFacts, modelItems: fitted.selectedModels, omissions: { facts: Math.max(0, facts.length - fitted.selectedFacts.length), modelItems: Math.max(0, models.length - fitted.selectedModels.length) } };
-  payload.inputHash = stableHash({ stage, target, query: effectiveQuery, facts: payload.facts.map((x) => x.hash), models: payload.modelItems.map((x) => x.hash), metadata });
+  payload.inputHash = stableHash({ stage, target, query: effectiveQuery, modelScope: allowedModels, facts: payload.facts.map((item) => item.hash), models: payload.modelItems.map((item) => item.hash), metadata });
   const id = sha256(`${stage}\0${target}\0${payload.inputHash}`).slice(0, 24); payload.id = id;
   const file = path.join(paths.context, stage, `${target ? target.replace(/[^a-z0-9_.-]+/gi, '-') : 'global'}.json`); writeJson(file, payload);
   db.prepare('INSERT INTO contexts(id,stage,target,query,input_hash,estimated_tokens,payload,created_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET input_hash=excluded.input_hash,estimated_tokens=excluded.estimated_tokens,payload=excluded.payload,created_at=excluded.created_at').run(id, stage, target || null, effectiveQuery, payload.inputHash, payload.estimatedTokens, JSON.stringify(payload), now());
