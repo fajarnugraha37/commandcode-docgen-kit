@@ -1,0 +1,1 @@
+Run `docgen model` in the current repository. Synthesize the core and enterprise model bundles from bounded semantic-index context packs, ingest the resulting typed model items back into SQLite, and report model/item counts and budget usage.
