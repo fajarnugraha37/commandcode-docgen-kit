@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { buildInventory } from '../lib/inventory.mjs';
 import { compileContext } from '../lib/context.mjs';
 import { databaseStats } from '../lib/indexer.mjs';
 import { all, audit, generate, index, model, plan, publish, status } from '../lib/pipeline.mjs';
 import { budgetReport, resetTelemetry } from '../lib/provider.mjs';
-import { commandExists, engineHome, ensureDir, findProjectRoot, kitVersion, loadConfig, parseArgs, projectPaths, readJson, requireProjectRoot, userHome, writeJson } from '../lib/core.mjs';
+import { commandExists, engineHome, ensureDir, kitVersion, loadConfig, parseArgs, projectPaths, readJson, requireProjectRoot, writeJson } from '../lib/core.mjs';
 import { runWorkspace } from './workspace.mjs';
 
 function usage() {
@@ -15,6 +14,7 @@ function usage() {
 
 Repository commands:
   docgen init [directory]
+  docgen migrate
   docgen doctor
   docgen index [--force]
   docgen model
@@ -45,20 +45,46 @@ function copyTree(source, target) {
   }
 }
 
+function defaultConfig() { return readJson(path.join(engineHome, 'project-template', 'config', 'documentation.json')); }
+function defaultState() { return readJson(path.join(engineHome, 'project-template', 'state', 'state.json')); }
 function init(target = '.') {
   const root = path.resolve(target); ensureDir(root); const paths = projectPaths(root); const template = path.join(engineHome, 'project-template');
   if (fs.existsSync(template)) copyTree(template, paths.base);
-  for (const dir of [paths.context, paths.telemetry, path.dirname(paths.budget), paths.model, path.dirname(paths.plan), paths.audit, paths.publish, paths.runs, path.dirname(paths.inventory)]) ensureDir(dir);
+  for (const dir of [paths.context, paths.telemetry, path.dirname(paths.budget), paths.model, path.dirname(paths.plan), paths.audit, paths.publish, paths.traceability, paths.runs, path.dirname(paths.inventory)]) ensureDir(dir);
   const marker = readJson(paths.project, {}); writeJson(paths.project, { ...marker, schemaVersion: '2.0', kitVersion, initializedAt: marker.initializedAt ?? new Date().toISOString(), engineScope: marker.engineScope ?? 'global', projectRoot: root.replaceAll('\\', '/') });
-  if (!fs.existsSync(paths.config)) writeJson(paths.config, readJson(path.join(engineHome, 'project-template', 'config', 'documentation.json')));
-  if (!fs.existsSync(paths.state)) writeJson(paths.state, { schemaVersion: '2.0', kitVersion, stages: {}, pages: {} });
+  if (!fs.existsSync(paths.config)) writeJson(paths.config, defaultConfig());
+  if (!fs.existsSync(paths.state)) writeJson(paths.state, defaultState());
   console.log(`Initialized DocGen ${kitVersion} at ${root}`);
+}
+
+function migrate(root) {
+  const paths = projectPaths(root); const current = readJson(paths.config, {}); const marker = readJson(paths.project, {});
+  if (current.schemaVersion === '2.0' && marker.kitVersion === kitVersion) { console.log(`DocGen project is already on ${kitVersion}.`); return; }
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-'); const backup = path.join(paths.base, 'migration-backup', timestamp); ensureDir(backup);
+  const moveNames = ['evidence','model','plan','audit','traceability','state','publish','index','context','telemetry','budget','runs','prompts'];
+  for (const name of moveNames) {
+    const source = path.join(paths.base, name); if (!fs.existsSync(source)) continue;
+    const target = path.join(backup, name); ensureDir(path.dirname(target)); fs.renameSync(source, target);
+  }
+  const configDir = path.join(paths.base, 'config');
+  if (fs.existsSync(configDir)) { const target = path.join(backup, 'config'); ensureDir(path.dirname(target)); fs.renameSync(configDir, target); }
+  const next = defaultConfig();
+  next.projectName = current.projectName ?? next.projectName;
+  next.outputRoot = current.outputRoot ?? next.outputRoot;
+  next.commandCode = { ...next.commandCode, executable: current.commandCode?.executable ?? '', trust: current.commandCode?.trust ?? next.commandCode.trust, skipOnboarding: current.commandCode?.skipOnboarding ?? next.commandCode.skipOnboarding, yolo: current.commandCode?.yolo ?? next.commandCode.yolo, model: current.commandCode?.model ?? '', stageModels: { ...next.commandCode.stageModels, ...(current.commandCode?.stageModels ?? {}) } };
+  next.ignore = { ...next.ignore, ...(current.ignore ?? {}), binary: { ...next.ignore.binary, ...(current.ignore?.binary ?? {}) } };
+  writeJson(paths.config, next); writeJson(paths.state, defaultState());
+  for (const dir of [paths.context, paths.telemetry, path.dirname(paths.budget), paths.model, path.dirname(paths.plan), paths.audit, paths.publish, paths.traceability, paths.runs, path.dirname(paths.inventory)]) ensureDir(dir);
+  writeJson(paths.project, { ...marker, schemaVersion: '2.0', kitVersion, migratedAt: new Date().toISOString(), migrationBackup: path.relative(root, backup).replaceAll('\\', '/') });
+  console.log(`Migrated project to DocGen ${kitVersion}.`);
+  console.log(`Legacy .docgen artifacts were archived at ${path.relative(root, backup).replaceAll('\\', '/')}.`);
+  console.log('Generated docs and .docgenignore were preserved. Run `docgen index`, then `docgen all`.');
 }
 
 function doctor(root) {
   const errors = []; const warnings = [];
   if (!commandExists('git')) errors.push('git executable not found');
-  try { const config = loadConfig(root); if (!config || typeof config !== 'object') errors.push('invalid documentation config'); } catch (error) { errors.push(error.message); }
+  try { const config = loadConfig(root); if (!config || typeof config !== 'object') errors.push('invalid documentation config'); if (config.schemaVersion !== '2.0') errors.push('legacy configuration detected; run `docgen migrate`'); } catch (error) { errors.push(error.message); }
   if (!process.versions.node || Number(process.versions.node.split('.')[0]) < 22) errors.push('Node.js 22+ is required for node:sqlite');
   if (!commandExists(process.platform === 'win32' ? 'cmdc' : 'cmd') && !loadConfig(root).commandCode?.executable) warnings.push('Command Code executable was not found using default names; configure commandCode.executable if needed.');
   try { const inventory = buildInventory(root); if (!inventory.files.length) warnings.push('source inventory is empty'); } catch (error) { errors.push(error.message); }
@@ -69,8 +95,8 @@ function doctor(root) {
 function printStatus(root) { console.log(JSON.stringify(status(root), null, 2)); }
 function printBudget(root) { console.log(JSON.stringify(budgetReport(root), null, 2)); }
 function sourceList(root, filter = '') { const inv = buildInventory(root); for (const file of inv.files) if (!filter || file.path.toLowerCase().includes(filter.toLowerCase())) console.log(file.path); }
-function sourceGrep(root, query) { if (!query) throw new Error('Usage: docgen source-grep <text>'); const inv = buildInventory(root); const needle = query.toLowerCase(); for (const item of inv.files) { const text = fs.readFileSync(path.join(root, item.path), 'utf8'); for (const [index, line] of text.split(/\r?\n/).entries()) if (line.toLowerCase().includes(needle)) console.log(`${item.path}:${index + 1}:${line.trim()}`); } }
-function ignore(root, target) { const inv = buildInventory(root, { force: true }); if (target) { const found = inv.files.find((x) => x.path === target); const excluded = inv.excluded.find((x) => x.path === target); console.log(JSON.stringify(found ? { included: true, ...found } : { included: false, ...(excluded ?? { path: target, reason: 'not-found' }) }, null, 2)); } else console.log(JSON.stringify(inv.metrics, null, 2)); }
+function sourceGrep(root, query) { if (!query) throw new Error('Usage: docgen source-grep <text>'); const inv = buildInventory(root); const needle = query.toLowerCase(); for (const item of inv.files) { const text = fs.readFileSync(path.join(root, item.path), 'utf8'); for (const [lineIndex, line] of text.split(/\r?\n/).entries()) if (line.toLowerCase().includes(needle)) console.log(`${item.path}:${lineIndex + 1}:${line.trim()}`); } }
+function ignore(root, target) { const inv = buildInventory(root); if (target) { const found = inv.files.find((item) => item.path === target); const excluded = inv.excluded.find((item) => item.path === target); console.log(JSON.stringify(found ? { included: true, ...found } : { included: false, ...(excluded ?? { path: target, reason: 'not-found' }) }, null, 2)); } else console.log(JSON.stringify(inv.metrics, null, 2)); }
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2); const { positional, options } = parseArgs(rest);
@@ -79,6 +105,7 @@ async function main() {
   if (command === 'workspace') { await runWorkspace(rest, { kitVersion }); return; }
   const root = requireProjectRoot();
   switch (command) {
+    case 'migrate': migrate(root); break;
     case 'doctor': doctor(root); break;
     case 'index': console.log(JSON.stringify(index(root, { force: Boolean(options.force) }), null, 2)); break;
     case 'model': console.log(JSON.stringify(await model(root), null, 2)); break;
