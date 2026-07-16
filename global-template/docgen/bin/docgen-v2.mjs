@@ -9,6 +9,40 @@ import { budgetReport, resetTelemetry } from '../lib/provider.mjs';
 import { commandExists, engineHome, ensureDir, kitVersion, loadConfig, parseArgs, projectPaths, readJson, requireProjectRoot, writeJson } from '../lib/core.mjs';
 import { runWorkspace } from './workspace.mjs';
 
+const MIN_PROVIDER_TURNS = 30;
+const TURN_KEYS = ['default', 'modelCore', 'modelEnterprise', 'plan', 'generate', 'audit'];
+
+function normalizedTurns(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(MIN_PROVIDER_TURNS, Math.trunc(parsed)) : MIN_PROVIDER_TURNS;
+}
+
+function normalizeTurnEnvironment() {
+  if (process.env.DOCGEN_MAX_TURNS !== undefined) {
+    process.env.DOCGEN_MAX_TURNS = String(normalizedTurns(process.env.DOCGEN_MAX_TURNS));
+  }
+}
+
+function enforceMinimumTurns(root) {
+  const paths = projectPaths(root);
+  const config = loadConfig(root);
+  config.commandCode ??= {};
+  config.commandCode.maxTurns ??= {};
+  let changed = false;
+  for (const key of TURN_KEYS) {
+    const current = config.commandCode.maxTurns[key];
+    const next = normalizedTurns(current);
+    if (current !== next) {
+      config.commandCode.maxTurns[key] = next;
+      changed = true;
+    }
+  }
+  if (changed) writeJson(paths.config, config);
+  return config.commandCode.maxTurns;
+}
+
+normalizeTurnEnvironment();
+
 function usage() {
   console.log(`Command Code DocGen ${kitVersion} — token-efficient semantic-index pipeline
 
@@ -104,6 +138,7 @@ async function main() {
   if (command === 'init') { init(positional[0] ?? '.'); return; }
   if (command === 'workspace') { await runWorkspace(rest, { kitVersion }); return; }
   const root = requireProjectRoot();
+  enforceMinimumTurns(root);
   switch (command) {
     case 'migrate': migrate(root); break;
     case 'doctor': doctor(root); break;
