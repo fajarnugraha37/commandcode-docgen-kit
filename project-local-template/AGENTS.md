@@ -1,66 +1,57 @@
 <!-- COMMANDCODE-DOCGEN:START -->
-# Documentation Engineering System
+# DocGen 2 Documentation Engineering
 
-This repository contains an evidence-grounded documentation workflow under `.docgen/**` with published Markdown under `docs/**`.
+This repository uses a token-efficient, evidence-grounded documentation pipeline. Repository source is indexed once into `.docgen/index/semantic.db`; provider runs receive bounded `.docgen/context/**` packs rather than broad source access.
 
-## Authority Order
+## Authority order
 
-When documentation claims conflict, use this authority order:
+1. application source and executable behavior;
+2. configuration, API/message contracts, schemas, migrations, and deployment manifests;
+3. deterministic facts/source chunks in the semantic index;
+4. typed `.docgen/model/**` items;
+5. generated documentation.
 
-1. application source code and executable behavior
-2. configuration, contracts, schemas, migrations, and deployment manifests
-3. generated evidence artifacts in `.docgen/evidence/**`
-4. normalized models in `.docgen/model/**`
-5. existing documentation
+Existing prose is not authoritative over contradictory source evidence.
 
-Existing prose is never authoritative over contradictory source evidence.
+## Epistemic rules
 
-## Epistemic Rules
+Material statements are `FACT`, `INFERENCE`, or `UNKNOWN`.
 
-Important technical statements must be treated as one of:
+- `FACT` requires direct repository-relative evidence present in the canonical source inventory.
+- `INFERENCE` must identify supporting facts/model items.
+- `UNKNOWN` preserves missing or disputed information without guessing.
 
-- `FACT`: directly supported by source evidence
-- `INFERENCE`: derived from multiple facts; the supporting evidence must be recorded
-- `UNKNOWN`: insufficient evidence; do not invent a conclusion
+Never invent endpoints, rules, states, integrations, ownership, security behavior, retry behavior, failure semantics, or operational guarantees.
 
-Never invent endpoints, business rules, state transitions, integrations, data ownership, security behavior, retry behavior, failure semantics, or operational guarantees.
-
-## Documentation Workflow
-
-Use this order:
+## Workflow
 
 ```text
-discover -> analyze -> plan -> generate -> audit -> fix as needed
+index -> model -> plan -> generate -> audit -> publish
 ```
 
-Do not skip directly from source code to broad user-facing documentation for non-trivial systems.
+Use `docgen all` or `docgen resume` for the complete content-hash-resumable pipeline. For a v1 project, run `docgen migrate` first.
 
-## Artifact Boundaries
+## Token boundary
 
-- evidence: `.docgen/evidence/**`
-- architecture/workflow model: `.docgen/model/**`
-- documentation plan: `.docgen/plan/**`
-- audit findings: `.docgen/audit/**`
-- generated documentation: `docs/**`
+- source inventory: `.docgen/index/inventory.json` and `.docgen/index/source-files.txt`;
+- semantic index: `.docgen/index/semantic.db`;
+- bounded provider inputs: `.docgen/context/**`;
+- provider telemetry/budget: `.docgen/telemetry/**` and `.docgen/budget/report.json`;
+- typed models: `.docgen/model/**`;
+- page plan: `.docgen/plan/manifest.json`;
+- traceability: `.docgen/traceability/**`;
+- audit results: `.docgen/audit/**`;
+- published documentation: `docs/**`.
 
-DocGen workflows must not modify application source, build files, migrations, infrastructure, or tests.
+Provider runs are context-only: they must not read repository source, the SQLite database, broad model directories, unrelated pages, agents, or skills. Deterministic index/render/audit code owns those boundaries.
 
-## Writing Standard
+## Writing standard
 
-Write for engineers who do not yet know the codebase. Prefer purpose, mental model, responsibilities, boundaries, interactions, workflows, state transitions, failure behavior, and actionable guides. Avoid file-by-file or class-by-class narration.
+Write for engineers who do not yet know the codebase. Prefer purpose, mental models, boundaries, interactions, lifecycles, branches, failure behavior, and actionable guidance over file-by-file narration. Use standard Markdown and Mermaid only. Keep claims precise and traceable.
 
-Use standard Markdown and Mermaid. Keep claims precise and traceable to evidence. Mark genuine uncertainty instead of smoothing it over.
+## Enterprise and workspace depth
+
+When evidence supports it, model security, operations, testing, data governance, decisions, configuration, change impact, and ownership. Multi-repository workspace analysis consumes validated repository models and must preserve unresolved edges rather than inventing cross-service links.
+
+DocGen workflows may write only under `.docgen/**` and `docs/**`; they must not modify application source, build files, migrations, infrastructure, or tests.
 <!-- COMMANDCODE-DOCGEN:END -->
-
-
-## Source Inventory and Ignore Boundary
-
-During DocGen workflows, repository source access must follow `.docgen/state/source-files.txt`. Do not read, search, cite, fingerprint, or use as FACT evidence any file excluded by `.gitignore`, `.docgenignore`, DocGen hard exclusions, or project `config.exclude`. Use explicit included paths or `docgen source-grep` instead of broad wildcard reads.
-
-## P1 Enterprise Depth
-
-When supported by evidence, build typed models for security, operations, testing, data governance, decisions, configuration, change impact, and ownership. Keep policy, business semantics, implementation behavior, operational guarantees, and inferred rationale epistemically distinct. Do not invent SLOs, permissions, owners, retention periods, recovery guarantees, or architectural rationale.
-
-## P3 system-of-systems workspace
-
-For multi-repository documentation, use `docgen workspace ...` from a parent workspace. Workspace analysis must consume validated `.docgen/model/**` artifacts from member repositories rather than bypassing repository ignore, binary, traceability, and contract boundaries. Cross-repository relationships require explicit contract/dependency evidence. All system diagrams use Mermaid.
