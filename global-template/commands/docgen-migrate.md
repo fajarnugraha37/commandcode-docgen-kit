@@ -1,0 +1,1 @@
+Run `docgen migrate` in the current initialized repository. This is a breaking v1-to-v2 migration: preserve `docs/**` and `.docgenignore`, archive legacy `.docgen` workflow artifacts, install the v2 config/state contract, and report the backup path.
