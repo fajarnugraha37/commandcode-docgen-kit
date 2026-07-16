@@ -27,7 +27,7 @@ const LEGACY_COMMANDS = ['docgen-discover','docgen-analyze','docgen-fix','docgen
 const LEGACY_MANAGED = [...LEGACY_ENGINE, ...LEGACY_AGENTS, ...LEGACY_COMMANDS];
 
 function sha256(data) { return crypto.createHash('sha256').update(data).digest('hex'); }
-function walk(dir) { const out = []; for (const entry of fs.readdirSync(dir, { withFileTypes: true })) { const file = path.join(dir, entry.name); entry.isDirectory() ? out.push(...walk(file)) : out.push(file); } return out; }
+function walk(dir) { if (!fs.existsSync(dir)) return []; const out = []; for (const entry of fs.readdirSync(dir, { withFileTypes: true })) { const file = path.join(dir, entry.name); entry.isDirectory() ? out.push(...walk(file)) : out.push(file); } return out; }
 function ensureDir(dir) { if (!dryRun) fs.mkdirSync(dir, { recursive: true }); }
 function copyWithPolicy(src, dest, backupRoot, installed, skipped) {
   const data = fs.readFileSync(src); const rel = path.relative(commandCodeHome, dest).replaceAll('\\', '/');
@@ -74,8 +74,8 @@ function mergeGlobalSettings(backupRoot, installed) {
 function installGlobal() {
   const template = path.join(here, 'global-template'); const backupRoot = path.join(commandCodeHome, 'docgen-backup', timestamp); const installed = []; const skipped = [];
   ensureDir(commandCodeHome);
-  for (const area of ['agents', 'skills', 'commands']) for (const src of walk(path.join(template, area))) copyWithPolicy(src, path.join(commandCodeHome, area, path.relative(path.join(template, area), src)), backupRoot, installed, skipped);
-  for (const src of walk(path.join(template, 'docgen'))) copyWithPolicy(src, path.join(commandCodeHome, 'docgen', path.relative(path.join(template, 'docgen'), src)), backupRoot, installed, skipped);
+  for (const area of ['agents', 'skills', 'commands']) { const areaRoot = path.join(template, area); for (const src of walk(areaRoot)) copyWithPolicy(src, path.join(commandCodeHome, area, path.relative(areaRoot, src)), backupRoot, installed, skipped); }
+  const engineRoot = path.join(template, 'docgen'); for (const src of walk(engineRoot)) copyWithPolicy(src, path.join(commandCodeHome, 'docgen', path.relative(engineRoot, src)), backupRoot, installed, skipped);
   removeLegacy(commandCodeHome, LEGACY_MANAGED, backupRoot, installed);
   mergeGlobalSettings(backupRoot, installed);
   if (!dryRun) {
