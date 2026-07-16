@@ -29,3 +29,15 @@ jobs:
         run: npm test
       - name: Installer dry run
         run: node install.mjs --dry-run --no-link-cli
+      - name: Upload exact CI source
+        if: always() && matrix.node-version == 24
+        uses: actions/upload-artifact@v4
+        with:
+          name: docgen-ci-source
+          if-no-files-found: error
+          retention-days: 3
+          path: |
+            global-template/docgen
+            global-template/docgen/project-template
+            install.mjs
+            VERSION
