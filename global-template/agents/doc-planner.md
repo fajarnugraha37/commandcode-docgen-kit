@@ -16,3 +16,6 @@ Produce `.docgen/plan/manifest.json` conforming to its schema. Do not write publ
 
 Before reading repository source, read `.docgen/state/source-files.txt`. Do not read, search, cite, or derive facts from repository paths absent from that inventory. Existing `.docgen/**` and `docs/**` workflow artifacts remain available.
 
+
+
+Apply `doc-documentation-experience` and `doc-migration-versioning`. Every page contract must choose a primary document mode, search keywords, aliases when relevant, lifecycle/version metadata, and evidence-derived example intents.

@@ -63,7 +63,7 @@ Published diagrams are Mermaid-only.
 - `audit/quality-summary.json`: evidence-centric quality metrics.
 
 
-## v0.8 P1 enterprise-depth models
+## P1 enterprise-depth models
 
 The enterprise stage produces repository-local typed models:
 
@@ -87,3 +87,19 @@ DocGen follows repository `.gitignore` and root `.docgenignore`. The effective i
 - `state/ignore-report.json`
 
 Ignored files are excluded from discovery, fingerprints, change detection, traceability, and FACT evidence. Use `docgen ignore`, `docgen source-list`, and `docgen source-grep` to inspect or search the effective source boundary.
+
+## v0.9 P2 documentation experience
+
+Published pages are classified by user intent: `tutorial`, `how-to`, `explanation`, `reference`, `runbook`, `decision-record`, `migration-guide`, or `troubleshooting`. DocGen deterministically produces:
+
+- Markdown frontmatter;
+- `docs/llms.txt` and bounded `docs/llms-full.txt`;
+- `publish/navigation.json` and `publish/search-index.json`;
+- backlinks, aliases/redirects, orphan-page and examples indexes;
+- version, status, deprecation, replacement, and migration metadata.
+
+Run `docgen publish` to rebuild these assets without an LLM call.
+
+## Binary and non-text token boundary
+
+Known images, audio/video, PDFs and office documents, archives, compiled artifacts, fonts, database files, keystores, invalid UTF-8, NUL-containing files, and oversized text are excluded from the canonical source inventory. The exclusion applies to reads, grep, fingerprints, change detection, freshness, and evidence validation. Configure the boundary under `ignore.binary` in `config/documentation.json`.

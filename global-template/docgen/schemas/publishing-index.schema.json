@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docgen:publishing-index:1.0",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "generatedAt": {
+      "type": "string"
+    },
+    "pages": {
+      "type": "array"
+    },
+    "navigation": {
+      "type": "array"
+    },
+    "redirects": {
+      "type": "array"
+    },
+    "backlinks": {
+      "type": "object"
+    },
+    "examples": {
+      "type": "array"
+    }
+  }
+}

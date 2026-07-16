@@ -30,6 +30,19 @@ function rules(file){
 }
 function matchRules(rel,isDir,items){let decision=null;for(const rule of items){if(rule.directoryOnly&&!isDir&&!rel.startsWith(`${rule.pattern}/`)&&!rel.includes(`/${rule.pattern}/`))continue;if(rule.regex.test(rel))decision={ignored:!rule.negated,reason:`.docgenignore:${rule.raw}`};}return decision;}
 function config(){try{return JSON.parse(fs.readFileSync(path.join(cwd,'.docgen','config','documentation.json'),'utf8'));}catch{return{};}}
+const binaryExt=new Set(['.png','.jpg','.jpeg','.gif','.webp','.bmp','.ico','.tif','.tiff','.avif','.heic','.psd','.mp3','.wav','.flac','.aac','.ogg','.m4a','.mp4','.mov','.avi','.mkv','.webm','.wmv','.pdf','.doc','.docx','.xls','.xlsx','.ppt','.pptx','.zip','.gz','.tgz','.bz2','.xz','.7z','.rar','.tar','.jar','.war','.ear','.class','.dll','.exe','.so','.dylib','.o','.a','.lib','.woff','.woff2','.ttf','.otf','.eot','.bin','.dat','.db','.sqlite','.sqlite3','.p12','.pfx','.jks','.keystore','.apk','.ipa','.iso','.dmg','.img','.wasm','.pyc']);
+function binaryDecision(target,rel,cfg){
+  if(cfg.ignore?.binary?.enabled===false||!fs.existsSync(target)||!fs.statSync(target).isFile())return null;
+  const ext=path.extname(rel).toLowerCase();const deny=new Set((cfg.ignore?.binary?.denyExtensions??[]).map((x)=>String(x).toLowerCase()));
+  const allow=new Set([...(cfg.sourceExtensions??[]),...(cfg.ignore?.binary?.allowExtensions??[])].map((x)=>String(x).toLowerCase()));
+  if(deny.has(ext)||(!allow.has(ext)&&binaryExt.has(ext)))return `binary-extension:${ext||'<none>'}`;
+  const stat=fs.statSync(target);const max=Number(cfg.ignore?.binary?.maxTextFileBytes??4194304);if(stat.size>max)return `text-file-too-large:${stat.size}`;
+  let buf;try{const fd=fs.openSync(target,'r');buf=Buffer.alloc(Math.min(Number(cfg.ignore?.binary?.probeBytes??16384),stat.size));const n=fs.readSync(fd,buf,0,buf.length,0);fs.closeSync(fd);buf=buf.subarray(0,n);}catch{return'non-text-unreadable';}
+  const sig=(...xs)=>xs.every((b,i)=>buf[i]===b);if(sig(0x89,0x50,0x4e,0x47)||sig(0xff,0xd8,0xff)||sig(0x25,0x50,0x44,0x46)||sig(0x50,0x4b,0x03,0x04)||sig(0x1f,0x8b)||sig(0x7f,0x45,0x4c,0x46)||sig(0x4d,0x5a)||sig(0x00,0x61,0x73,0x6d))return'binary-magic-signature';
+  if(buf.includes(0))return'binary-null-byte';
+  try{new TextDecoder('utf-8',{fatal:true}).decode(buf);}catch{return'non-utf8-content';}
+  return null;
+}
 function configExcluded(rel,cfg){for(const raw of cfg.exclude??[]){const p=String(raw).replaceAll('\\','/').replace(/^\.\//,'');const cleaned=p.replace(/\/\*\*$/,'').replace(/\/+$/,'');if(patternRegex(cleaned,cleaned.startsWith('/')).test(rel)||rel===cleaned||rel.startsWith(`${cleaned}/`))return `config.exclude:${raw}`;}return null;}
 function gitRepositoryAvailable(){
   if(fs.existsSync(path.join(cwd,'.git')))return true;
@@ -58,6 +71,7 @@ function decision(rawPath){
   const ce=configExcluded(rel,cfg);if(ce)return{ignored:true,reason:ce};
   if(cfg.ignore?.useGitignore!==false&&gitIgnored(rel))return{ignored:true,reason:'.gitignore'};
   if(cfg.ignore?.useDocgenignore!==false){const file=path.join(cwd,cfg.ignore?.docgenignoreFile||'.docgenignore');const d=matchRules(rel,fs.existsSync(target)&&fs.statSync(target).isDirectory(),rules(file));if(d)return d;}
+  const binary=binaryDecision(target,rel,cfg);if(binary)return{ignored:true,reason:binary};
   return {ignored:false};
 }
 

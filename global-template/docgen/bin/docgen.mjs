@@ -21,7 +21,7 @@ function findProjectRoot(start = process.cwd()) {
 }
 
 let root = findProjectRoot() ?? path.resolve(process.cwd());
-function setRoot(nextRoot) { root = path.resolve(nextRoot); }
+function setRoot(nextRoot) { root = path.resolve(nextRoot); sourceSnapshotCache=null; sourceInventoryCache=null; gitRepositoryAvailabilityCache=null; gitIgnoreSingleCache.clear(); ignoreRulesCache.clear(); }
 
 const statePath = path.join(root, '.docgen', 'state', 'state.json');
 const manifestPath = path.join(root, '.docgen', 'plan', 'manifest.json');
@@ -52,8 +52,17 @@ const freshnessPath = path.join(traceabilityRoot, 'freshness.json');
 const sourceInventoryPath = path.join(root, '.docgen', 'state', 'source-inventory.json');
 const sourceFilesPath = path.join(root, '.docgen', 'state', 'source-files.txt');
 const ignoreReportPath = path.join(root, '.docgen', 'state', 'ignore-report.json');
+const publishRoot = path.join(root, '.docgen', 'publish');
+const navigationIndexPath = path.join(publishRoot, 'navigation.json');
+const searchIndexPath = path.join(publishRoot, 'search-index.json');
+const backlinksPath = path.join(publishRoot, 'backlinks.json');
+const redirectsPath = path.join(publishRoot, 'redirects.json');
+const orphansPath = path.join(publishRoot, 'orphans.json');
+const examplesIndexPath = path.join(publishRoot, 'examples.json');
+const publishingReportPath = path.join(publishRoot, 'report.json');
 let sourceSnapshotCache = null;
 let sourceInventoryCache = null;
+let gitRepositoryAvailabilityCache = null;
 const gitIgnoreSingleCache = new Map();
 const ignoreRulesCache = new Map();
 
@@ -855,6 +864,9 @@ function ensurePageTraceability(page, options = {}) {
   if (!fs.existsSync(file)) writeJson(file, normalizeTraceabilityObject({ legacyUnmapped: true, claims: [], coverage: {} }, page, { defaultHashes: true }));
   return normalizeJsonFile(file, (obj) => normalizeTraceabilityObject(obj, page, { defaultHashes: true }), (obj) => assertTraceabilityObject(obj, page));
 }
+function refreshPageTraceabilityHashes(page) {
+  const trace=ensurePageTraceability(page); trace.pageHash=pageCurrentHash(page); trace.inputHash=pageInputHash(page); trace.sourceSnapshot=currentSourceSnapshot(); trace.generatedAt=now(); writeJson(traceabilityPath(page),trace); return trace;
+}
 function pageRuntimeContract(page) {
   return { ...page, traceabilityPath: traceabilityRelPath(page), traceabilityContract: { required: true, claimClassifications: ['FACT','INFERENCE','UNKNOWN'], evidenceRequiredForFacts: true }, sourceSnapshot: currentSourceSnapshot() };
 }
@@ -986,12 +998,27 @@ function normalizeManifest(write = true) {
       coverageTags: arrayValue(page, ['coverageTags', 'coverage', 'tags'], []).map(String),
       requiredTables: arrayValue(page, ['requiredTables', 'tables', 'tableRequirements'], []).map((x) => typeof x === 'string' ? x : x?.title ?? x?.name).filter(Boolean),
       relatedPages: arrayValue(page, ['relatedPages', 'related', 'links'], []).map((x) => slug(typeof x === 'string' ? x : x?.id ?? x?.pageId ?? x?.title)).filter(Boolean),
-      qualityHints: arrayValue(page, ['qualityHints', 'hints', 'qualityRequirements'], []).map(String)
+      qualityHints: arrayValue(page, ['qualityHints', 'hints', 'qualityRequirements'], []).map(String),
+      mode: String(scalarValue(page, ['mode','documentMode','intent'], page.type === 'reference' ? 'reference' : page.type === 'troubleshooting' ? 'troubleshooting' : page.type === 'guide' ? 'how-to' : 'explanation')).toLowerCase(),
+      aliases: arrayValue(page, ['aliases','redirectFrom','legacyPaths'], []).map((x)=>canonicalPagePath(x)).filter((x)=>x!==canonicalPagePath(scalarValue(page, ['path','file','outputPath','targetPath','documentPath'], id))),
+      status: String(scalarValue(page, ['status','lifecycleStatus','publicationStatus'], 'active')).toLowerCase(),
+      version: scalarValue(page, ['version','docVersion','since'], null),
+      deprecatedSince: scalarValue(page, ['deprecatedSince','deprecated','sunsetVersion'], null),
+      replacementPage: scalarValue(page, ['replacementPage','replacement','supersededBy'], null) ? slug(scalarValue(page, ['replacementPage','replacement','supersededBy'], null)) : null,
+      migrationFrom: arrayValue(page, ['migrationFrom','fromVersions','sourceVersions'], []).map(String),
+      migrationTo: scalarValue(page, ['migrationTo','targetVersion'], null),
+      exampleIntents: arrayValue(page, ['exampleIntents','examples','scenarios'], []).map((x)=>typeof x==='string'?x:x?.title??x?.name??x?.intent).filter(Boolean),
+      searchKeywords: arrayValue(page, ['searchKeywords','keywords','searchTerms'], []).map(String),
+      frontmatter: page.frontmatter && typeof page.frontmatter === 'object' ? page.frontmatter : {}
     };
   });
   const pageIdByAlias = new Map();
   for (const p of pages) {
     for (const alias of [p.id, p.title, p.path, p.path.replace(/^docs\//, '').replace(/\.md$/i, ''), path.posix.basename(p.path, '.md')]) pageIdByAlias.set(slug(alias), p.id);
+  }
+  for (const p of pages) {
+    p.replacementPage = p.replacementPage ? (pageIdByAlias.get(slug(p.replacementPage)) ?? slug(p.replacementPage)) : null;
+    p.aliases = [...new Set((p.aliases ?? []).filter((x)=>x!==p.path))];
   }
   const rawNavigation = arrayValue(raw, ['navigation', 'categories', 'groups', 'sections'], []);
   const navigation = rawNavigation.map((value, index) => {
@@ -1015,14 +1042,23 @@ function normalizeManifest(write = true) {
 }
 function manifestPreflight(manifest = normalizeManifest(), options = {}) {
   const errors = []; const warnings = []; const ids = new Set(); const paths = new Set();
-  const allowedTypes = new Set(loadConfig().pageTypes ?? ['overview','architecture','business','concept','flow','guide','reference','data','integration','operations','troubleshooting']);
+  const cfg=loadConfig();
+  const allowedTypes = new Set(cfg.pageTypes ?? ['overview','architecture','business','concept','flow','guide','reference','data','integration','operations','troubleshooting']);
+  const allowedModes = new Set(cfg.documentationExperience?.modes ?? ['tutorial','how-to','explanation','reference','runbook','decision-record','migration-guide','troubleshooting']);
+  const aliasOwners=new Map();
   for (const page of manifest.pages) {
     if (ids.has(page.id)) errors.push(`duplicate page id: ${page.id}`); ids.add(page.id);
-    if (paths.has(page.path)) errors.push(`duplicate page path: ${page.path}`); paths.add(page.path);
+    if (paths.has(page.path)) errors.push(`duplicate page path: ${page.path}`);
+    if (aliasOwners.has(page.path)) errors.push(`${page.id}: canonical path collides with alias owned by ${aliasOwners.get(page.path)}: ${page.path}`);
+    paths.add(page.path);
     if (!page.title?.trim()) errors.push(`${page.id}: title is required`);
     if (!page.category?.trim()) errors.push(`${page.id}: category is required`);
     if (!allowedTypes.has(page.type)) errors.push(`${page.id}: unsupported page type ${page.type}`);
+    if (!allowedModes.has(page.mode)) errors.push(`${page.id}: unsupported document mode ${page.mode}`);
     if (!Array.isArray(page.requiredSections) || !page.requiredSections.length) errors.push(`${page.id}: requiredSections must not be empty`);
+    for (const alias of page.aliases ?? []) { if(aliasOwners.has(alias)) errors.push(`${page.id}: duplicate alias ${alias} also owned by ${aliasOwners.get(alias)}`); else aliasOwners.set(alias,page.id); if(paths.has(alias)) errors.push(`${page.id}: alias collides with canonical page path ${alias}`); }
+    if(page.replacementPage && !manifest.pages.some((p)=>p.id===page.replacementPage)) warnings.push(`${page.id}: replacementPage does not exist: ${page.replacementPage}`);
+    if(page.status==='deprecated' && !page.deprecatedSince) warnings.push(`${page.id}: deprecated page should declare deprecatedSince`);
     for (const ref of [...(page.evidence ?? []), ...(page.models ?? [])]) if (typeof ref === 'string' && !exists(ref)) errors.push(`${page.id}: unresolved input reference: ${ref}`);
   }
   const navigationCounts = new Map();
@@ -1211,6 +1247,67 @@ function writeNavigationSummary(manifest) {
   fs.writeFileSync(path.join(root, 'docs', 'SUMMARY.md'), lines.join('\n').trimEnd() + '\n');
 }
 
+function yamlScalar(value) {
+  if (value === null || value === undefined) return 'null';
+  if (typeof value === 'boolean' || typeof value === 'number') return String(value);
+  return JSON.stringify(String(value));
+}
+function pageFrontmatter(page) {
+  let trace=null; try{if(fs.existsSync(traceabilityPath(page)))trace=readJson(traceabilityPath(page));}catch{}
+  const snapshot=trace?.sourceSnapshot??currentSourceSnapshot();
+  const verifiedAt=snapshot?.capturedAt??loadPageState().pages?.[page.id]?.generatedAt??now();
+  return {
+    title:page.title, description:page.summary||page.purpose, pageId:page.id, category:page.category, mode:page.mode,
+    type:page.type, order:Number(page.order??0), audience:page.audience??[], status:page.status??'active',
+    version:page.version??null, deprecatedSince:page.deprecatedSince??null, replacementPage:page.replacementPage??null,
+    aliases:page.aliases??[], sourceCommit:snapshot?.commit??null, lastVerified:String(verifiedAt).slice(0,10),
+    coverage:page.coverageTags??[], ...(page.frontmatter??{})
+  };
+}
+function renderYamlFrontmatter(obj) {
+  const lines=['---'];
+  for(const [key,value] of Object.entries(obj)){
+    if(value===null||value===undefined||value==='')continue;
+    if(Array.isArray(value)){lines.push(`${key}:`);for(const x of value)lines.push(`  - ${yamlScalar(x)}`);} else lines.push(`${key}: ${yamlScalar(value)}`);
+  }
+  lines.push('---',''); return lines.join('\n');
+}
+function ensurePageFrontmatter(page) {
+  const file=pageFile(page); if(!fs.existsSync(file))return;
+  let body=fs.readFileSync(file,'utf8');
+  if(/^---\s*\n[\s\S]*?\n---\s*\n/.test(body)) body=body.replace(/^---\s*\n[\s\S]*?\n---\s*\n/,'');
+  const next=renderYamlFrontmatter(pageFrontmatter(page))+body.replace(/^\s+/,'');
+  if(fs.readFileSync(file,'utf8')!==next)fs.writeFileSync(file,next);
+}
+function stripFrontmatter(text){return String(text).replace(/^---\s*\n[\s\S]*?\n---\s*\n/,'');}
+function markdownExcerpt(text,max=320){return stripFrontmatter(text).replace(/```[\s\S]*?```/g,' ').replace(/[#>*_`\[\]()]/g,' ').replace(/\s+/g,' ').trim().slice(0,max);}
+function extractHeadings(text){return [...stripFrontmatter(text).matchAll(/^(#{2,6})\s+(.+)$/gm)].map((m)=>({level:m[1].length,title:m[2].trim(),anchor:slug(m[2])}));}
+function extractExamples(page,text){
+  const lines=stripFrontmatter(text).split(/\r?\n/);const out=[];let trace={claims:[]};try{if(fs.existsSync(traceabilityPath(page)))trace=readJson(traceabilityPath(page));}catch{}
+  for(let i=0;i<lines.length;i++)if(/^#{2,6}\s+.*(?:example|scenario|contoh|sample|walkthrough)/i.test(lines[i])){const title=lines[i].replace(/^#+\s+/,'').trim();const buf=[];for(let j=i+1;j<lines.length&&!/^#{2,6}\s+/.test(lines[j]);j++)buf.push(lines[j]);const matching=(trace.claims??[]).filter((c)=>normalizeHeading(c.section).includes(normalizeHeading(title))||normalizeHeading(title).includes(normalizeHeading(c.section)));const evidenceRefs=[...new Set(matching.flatMap((c)=>(c.evidence??[]).map((e)=>e.path)).filter(Boolean))];const modelRefs=[...new Set(matching.flatMap((c)=>c.sourceModelRefs??[]).filter(Boolean))];out.push({id:`${page.id}-${slug(title)}`,pageId:page.id,title,summary:markdownExcerpt(buf.join('\n'),500),evidenceDerived:evidenceRefs.length+modelRefs.length>0,evidenceRefs,modelRefs});}
+  return out;
+}
+function doPublish() {
+  const manifest=requireManifestPreflight(); const cfg=loadConfig().documentationExperience??{}; fs.mkdirSync(publishRoot,{recursive:true});
+  const byId=new Map(manifest.pages.map((p)=>[p.id,p])); const navigation=[]; const search=[]; const backlinks={}; const redirects=[]; const examples=[];
+  for(const group of manifest.navigation??[]) navigation.push({...group,pages:(group.pages??[]).map((id)=>{const p=byId.get(typeof id==='string'?id:id.id);return p?{id:p.id,title:p.title,path:p.path,mode:p.mode,status:p.status,summary:p.summary}:null;}).filter(Boolean)});
+  for(const page of manifest.pages){
+    const file=pageFile(page); if(!fs.existsSync(file))continue; ensurePageFrontmatter(page); const md=fs.readFileSync(file,'utf8');
+    search.push({id:page.id,title:page.title,path:page.path,category:page.category,mode:page.mode,type:page.type,status:page.status,summary:page.summary,keywords:[...(page.searchKeywords??[]),...(page.coverageTags??[])],headings:extractHeadings(md),excerpt:markdownExcerpt(md),updatedAt:fs.statSync(file).mtime.toISOString()});
+    backlinks[page.id]??=[]; for(const target of page.relatedPages??[]){backlinks[target]??=[];backlinks[target].push({pageId:page.id,path:page.path,title:page.title,relation:'related'});}
+    for(const alias of page.aliases??[])redirects.push({from:alias,to:page.path,pageId:page.id,status:page.status});
+    examples.push(...extractExamples(page,md));
+  }
+  const linked=new Set((manifest.navigation??[]).flatMap((g)=>g.pages??[]).map((x)=>typeof x==='string'?x:x.id)); const orphans=manifest.pages.filter((p)=>!linked.has(p.id)).map((p)=>({id:p.id,path:p.path,title:p.title}));
+  writeJson(navigationIndexPath,{schemaVersion:'1.0',generatedAt:now(),navigation}); writeJson(searchIndexPath,{schemaVersion:'1.0',generatedAt:now(),pages:search}); writeJson(backlinksPath,{schemaVersion:'1.0',generatedAt:now(),backlinks}); writeJson(redirectsPath,{schemaVersion:'1.0',generatedAt:now(),redirects}); writeJson(orphansPath,{schemaVersion:'1.0',generatedAt:now(),orphans}); writeJson(examplesIndexPath,{schemaVersion:'1.0',generatedAt:now(),examples});
+  const llms=['# '+(loadConfig().projectName||path.basename(root)),'','> '+(manifest.metadata?.description||'Generated system knowledge base.'),''];
+  for(const group of navigation){llms.push(`## ${group.title}`,'');for(const p of group.pages)llms.push(`- [${p.title}](${p.path.replace(/^docs\//,'')}) — ${p.summary??''}`);llms.push('');}
+  fs.writeFileSync(path.join(root,'docs','llms.txt'),llms.join('\n').trimEnd()+'\n');
+  if(cfg.generateLlmsFull!==false){const max=Number(cfg.llmsFullMaxBytes??5*1024*1024);let full=llms.join('\n')+'\n';for(const p of manifest.pages){const f=pageFile(p);if(!fs.existsSync(f))continue;const chunk=`\n\n# ${p.title}\n\nSource: ${p.path}\n\n${stripFrontmatter(fs.readFileSync(f,'utf8'))}`;if(Buffer.byteLength(full+chunk)>max)break;full+=chunk;}fs.writeFileSync(path.join(root,'docs','llms-full.txt'),full.trimEnd()+'\n');}
+  const report={schemaVersion:'1.0',generatedAt:now(),pages:search.length,navigationGroups:navigation.length,redirects:redirects.length,backlinkTargets:Object.keys(backlinks).length,orphans:orphans.length,examples:examples.length,artifacts:[rel(navigationIndexPath),rel(searchIndexPath),rel(backlinksPath),rel(redirectsPath),rel(orphansPath),rel(examplesIndexPath),'docs/llms.txt',...(cfg.generateLlmsFull===false?[]:['docs/llms-full.txt'])]};writeJson(publishingReportPath,report);
+  console.log(`Publishing metadata generated: ${search.length} pages, ${navigation.length} groups, ${redirects.length} redirects, ${examples.length} examples, ${orphans.length} orphans.`); return report;
+}
+
 function reconcileGeneratedPage(page) {
   const expected = pageFile(page);
   if (fs.existsSync(expected)) return expected;
@@ -1236,8 +1333,10 @@ function reconcileGeneratedPage(page) {
 function validatePageFile(page) {
   const file = reconcileGeneratedPage(page);
   if (!fs.existsSync(file)) throw new Error(`Missing generated page: ${page.path}`);
+  ensurePageFrontmatter(page);
   const text = fs.readFileSync(file, 'utf8');
-  if (!/^#\s+\S/m.test(text)) throw new Error(`${page.path} has no H1 heading`);
+  if (!/^---\s*\n[\s\S]*?\n---\s*\n/.test(text)) throw new Error(`${page.path} has no publishing frontmatter`);
+  if (!/^#\s+\S/m.test(stripFrontmatter(text))) throw new Error(`${page.path} has no H1 heading`);
   if ((text.match(/```/g) ?? []).length % 2 !== 0) throw new Error(`${page.path} has an unclosed fenced code block`);
   if (/[A-Za-z]:\\Users\\|\/home\/[^/]+\//.test(text)) throw new Error(`${page.path} appears to contain an absolute local user path`);
   if (qualityConfig().requireMermaidOnly !== false) validateMermaidOnly(text, page.path);
@@ -1268,10 +1367,10 @@ function validateStatic() {
   validateSkills(errors);
   const requiredAgents = ['doc-discoverer', 'doc-architect', 'doc-domain-analyst', 'doc-enterprise-analyst', 'doc-planner', 'doc-writer', 'doc-auditor'];
   for (const a of requiredAgents) if (!fs.existsSync(path.join(commandCodeHome, 'agents', `${a}.md`))) errors.push(`Missing global agent: ${a}`);
-  const requiredCommands = ['docgen-init', 'docgen-doctor', 'docgen-discover', 'docgen-analyze', 'docgen-plan', 'docgen-generate', 'docgen-audit', 'docgen-fix', 'docgen-update', 'docgen-status', 'docgen-enrich', 'docgen-quality', 'docgen-semantics', 'docgen-preflight', 'docgen-resume', 'docgen-contract-test', 'docgen-traceability', 'docgen-enterprise', 'docgen-ignore'];
+  const requiredCommands = ['docgen-init', 'docgen-doctor', 'docgen-discover', 'docgen-analyze', 'docgen-plan', 'docgen-generate', 'docgen-audit', 'docgen-fix', 'docgen-update', 'docgen-status', 'docgen-enrich', 'docgen-quality', 'docgen-semantics', 'docgen-preflight', 'docgen-resume', 'docgen-contract-test', 'docgen-traceability', 'docgen-enterprise', 'docgen-ignore', 'docgen-publish'];
   for (const c of requiredCommands) if (!fs.existsSync(path.join(commandCodeHome, 'commands', `${c}.md`))) errors.push(`Missing global command: ${c}`);
   for (const prompt of ['discover.md', 'analyze.md', 'semantics.md', 'enterprise.md', 'plan.md', 'generate.md', 'enrich.md', 'audit.md', 'fix.md', 'update-impact.md', 'generate-batch.md', 'enrich-batch.md', 'audit-batch.md']) if (!fs.existsSync(assetFile('prompts', prompt))) errors.push(`Missing prompt: ${prompt}`);
-  for (const schema of ['evidence-artifact.schema.json', 'evidence-index.schema.json', 'component.schema.json', 'workflow.schema.json', 'system.schema.json', 'business.schema.json', 'flows.schema.json', 'catalogs.schema.json', 'manifest.schema.json', 'audit-page.schema.json', 'audit-index.schema.json', 'update-plan.schema.json', 'semantic-item.schema.json', 'traceability.schema.json', 'quality-summary.schema.json', 'security.schema.json', 'operations.schema.json', 'testing.schema.json', 'data-governance.schema.json', 'decisions.schema.json', 'configuration.schema.json', 'change-impact.schema.json', 'ownership.schema.json']) {
+  for (const schema of ['evidence-artifact.schema.json', 'evidence-index.schema.json', 'component.schema.json', 'workflow.schema.json', 'system.schema.json', 'business.schema.json', 'flows.schema.json', 'catalogs.schema.json', 'manifest.schema.json', 'audit-page.schema.json', 'audit-index.schema.json', 'update-plan.schema.json', 'semantic-item.schema.json', 'traceability.schema.json', 'quality-summary.schema.json', 'security.schema.json', 'operations.schema.json', 'testing.schema.json', 'data-governance.schema.json', 'decisions.schema.json', 'configuration.schema.json', 'change-impact.schema.json', 'ownership.schema.json', 'publishing-index.schema.json']) {
     try { validateJsonFile(assetFile('schemas', schema)); } catch (e) { errors.push(e.message); }
   }
   if (errors.length) {
@@ -1423,7 +1522,7 @@ async function doPlan(progressLabel = '') {
 }
 function pageFile(page) { return path.join(root, canonicalPagePath(page.path)); }
 function pageIsValid(page) { try { validatePageFile(page); return true; } catch { return false; } }
-function pageCurrentHash(page) { return fileSha256(pageFile(page)); }
+function pageCurrentHash(page) { const f=pageFile(page); return fs.existsSync(f)?sha256Text(stripFrontmatter(fs.readFileSync(f,'utf8'))):null; }
 function pageInputHash(page) {
   const hash = crypto.createHash('sha256');
   hash.update(JSON.stringify({ ...page, evidence: [...(page.evidence ?? [])].sort(), models: [...(page.models ?? [])].sort() }));
@@ -1440,9 +1539,11 @@ function pageIsReusable(page) {
   const currentInputHash = pageInputHash(page);
   const state = loadPageState().pages?.[page.id];
   if (state?.generateInputHash === currentInputHash) return true;
-  if (!state?.generateInputHash && executionConfig().adoptLegacyValidPages) {
-    updatePageState(page.id, { generateStatus: 'completed', generatedAt: state?.generatedAt ?? now(), pageHash: pageCurrentHash(page), generateInputHash: currentInputHash, targetPath: page.path, adoptedLegacyValidPage: true });
-    console.log(`[docgen] adopted legacy valid page checkpoint: ${page.id}`);
+  const pageState=loadPageState();
+  const preP2=String(pageState.kitVersion??'0.0.0').localeCompare('0.9.0',undefined,{numeric:true,sensitivity:'base'})<0;
+  if ((!state?.generateInputHash || (preP2 && loadConfig().documentationExperience?.adoptPreP2Pages !== false)) && executionConfig().adoptLegacyValidPages) {
+    updatePageState(page.id, { generateStatus: 'completed', generatedAt: state?.generatedAt ?? now(), pageHash: pageCurrentHash(page), generateInputHash: currentInputHash, targetPath: page.path, adoptedLegacyValidPage: true, adoptedP2Metadata:preP2 });
+    console.log(`[docgen] adopted legacy valid page checkpoint: ${page.id}${preP2?' (P2 metadata/frontmatter migration)':''}`);
     return true;
   }
   return false;
@@ -1472,7 +1573,7 @@ async function doGenerate(id, progressLabel = '', allowEnrich = true, force = fa
   } else {
     updatePageState(id, { generateStatus: 'running', targetPath: page.path });
     await runCommandCode('generate', renderPrompt('generate.md', { PAGE_JSON: JSON.stringify(pageRuntimeContract(page), null, 2) }), id, progressLabel);
-    validatePageFile(page);
+    validatePageFile(page); refreshPageTraceabilityHashes(page);
     updatePageState(id, { generateStatus: 'completed', generatedAt: now(), pageHash: pageCurrentHash(page), generateInputHash: pageInputHash(page), targetPath: page.path });
   }
   if (allowEnrich && qualityConfig().autoEnrich !== false && isComprehensive() && pageNeedsEnrichment(page)) await doEnrich(id, progressLabel, force);
@@ -1480,12 +1581,15 @@ async function doGenerate(id, progressLabel = '', allowEnrich = true, force = fa
 async function doGenerateBatch(pages, progressLabel = '') {
   const pending = pages.filter((p) => !(executionConfig().skipValidPages && pageIsReusable(p)));
   for (const p of pages.filter((p) => !pending.includes(p))) console.log(`[docgen] SKIP generate:${p.id} — valid page already exists.`);
-  if (!pending.length) return;
+  if (!pending.length) {
+    if (qualityConfig().autoEnrich !== false && isComprehensive()) { const thin=pages.filter(pageNeedsEnrichment); if(thin.length) await doEnrichBatch(thin, `${progressLabel} | quality-repair`); }
+    return;
+  }
   for (const p of pending) updatePageState(p.id, { generateStatus: 'running', targetPath: p.path });
   await runCommandCode('generate', renderPrompt('generate-batch.md', { PAGES_JSON: JSON.stringify(pending.map(pageRuntimeContract), null, 2) }), pending.map((p) => p.id).join(','), progressLabel);
   const failures = [];
   for (const page of pending) {
-    try { validatePageFile(page); ensurePageTraceability(page); updatePageState(page.id, { generateStatus: 'completed', generatedAt: now(), pageHash: pageCurrentHash(page), generateInputHash: pageInputHash(page), targetPath: page.path }); }
+    try { validatePageFile(page); refreshPageTraceabilityHashes(page); updatePageState(page.id, { generateStatus: 'completed', generatedAt: now(), pageHash: pageCurrentHash(page), generateInputHash: pageInputHash(page), targetPath: page.path }); }
     catch (e) { failures.push({ page, error: e.message }); updatePageState(page.id, { generateStatus: 'failed', error: e.message }); }
   }
   if (failures.length) {
@@ -1575,7 +1679,8 @@ function pageQualityReport(page) {
   const text = fs.readFileSync(file, 'utf8');
   const q = qualityConfig(); const semanticQ = q.semanticMetrics ?? {};
   const words = pageWordCount(text); const headings = headingNames(text); const normalized = headings.map(normalizeHeading);
-  const requiredSections = page.requiredSections ?? [];
+  const modeDefaults=loadConfig().documentationExperience?.modeRequiredSections??{};
+  const requiredSections = [...new Set([...(page.requiredSections ?? []), ...(loadConfig().documentationExperience?.enforceModeSections===false?[]:(modeDefaults[page.mode]??[]))])];
   const missingSections = requiredSections.filter((x) => !normalized.some((h) => h.includes(normalizeHeading(x)) || normalizeHeading(x).includes(h)));
   const diagramIntents = page.diagramIntents ?? []; const mermaidCount = (text.match(/```mermaid\b/g) ?? []).length;
   const minWords = q.minWordsByType?.[page.type] ?? 0; const errors = []; const warnings = [];
@@ -1583,6 +1688,10 @@ function pageQualityReport(page) {
   if ((q.minHeadings ?? 0) && headings.length < q.minHeadings) errors.push(`heading count ${headings.length} is below ${q.minHeadings}`);
   if (q.requireDeclaredSections !== false && missingSections.length) errors.push(`missing required sections: ${missingSections.join(', ')}`);
   if (q.requirePlannedDiagrams !== false && diagramIntents.length && mermaidCount < 1) errors.push('manifest declares diagram intents but no Mermaid diagram exists');
+  const exampleIntents=page.exampleIntents??[]; const extractedExamples=extractExamples(page,text); const exampleHeadingCount=extractedExamples.length;
+  if(loadConfig().documentationExperience?.requireEvidenceDerivedExamples!==false && exampleIntents.length && exampleHeadingCount<1) errors.push(`manifest declares example intents but no evidence-derived example/scenario section exists`);
+  if(loadConfig().documentationExperience?.requireEvidenceDerivedExamples!==false && exampleIntents.length && extractedExamples.some((x)=>!x.evidenceDerived)) errors.push(`example/scenario sections lack claim-level evidence or model references: ${extractedExamples.filter((x)=>!x.evidenceDerived).map((x)=>x.title).join(', ')}`);
+  if(page.status==='deprecated' && !headings.some((x)=>/(deprecat|migration|replacement|sunset)/i.test(x))) errors.push('deprecated page lacks a deprecation/migration/replacement section');
   const semantic = pageSemanticMetrics(page, text);
   if (semantic.structuredClaimRatio < Number(semanticQ.minStructuredClaimRatio ?? 0.7)) errors.push(`structured claim ratio ${semantic.structuredClaimRatio.toFixed(2)} is below ${semanticQ.minStructuredClaimRatio ?? 0.7}`);
   if (semantic.claimGroundingRatio < Number(semanticQ.minClaimGroundingRatio ?? 0.9)) errors.push(`claim grounding ratio ${semantic.claimGroundingRatio.toFixed(2)} is below ${semanticQ.minClaimGroundingRatio ?? 0.9}`);
@@ -1595,7 +1704,7 @@ function pageQualityReport(page) {
   const requiredGroundedClaims = Math.max(1, Math.ceil(words / 1000 * Number(semanticQ.minEvidenceClaimsPer1000Words ?? 1.5)));
   semantic.requiredGroundedClaims = requiredGroundedClaims;
   if (semantic.groundedClaimCount < requiredGroundedClaims) errors.push(`grounded claim count ${semantic.groundedClaimCount} is below evidence-density requirement ${requiredGroundedClaims}`);
-  return { pageId: page.id, pagePath: page.path, type: page.type, words, headings: headings.length, minWords, requiredSections, missingSections, diagramIntents, mermaidCount, semantic, errors, warnings };
+  return { pageId: page.id, pagePath: page.path, type: page.type, mode:page.mode, words, exampleIntents, exampleHeadingCount, examples:extractedExamples, headings: headings.length, minWords, requiredSections, missingSections, diagramIntents, mermaidCount, semantic, errors, warnings };
 }
 function validatePageQuality(page, hard = true) {
   const report = pageQualityReport(page);
@@ -1613,7 +1722,7 @@ async function doEnrich(id, progressLabel = '', force = false) {
     console.log(`[docgen] SKIP enrich:${id} — current page already satisfies quality gates.`); return;
   }
   await runCommandCode('enrich', renderPrompt('enrich.md', { PAGE_JSON: JSON.stringify(pageRuntimeContract(page), null, 2) }), id, progressLabel);
-  validatePageFile(page); ensurePageTraceability(page); validatePageQuality(page, false);
+  validatePageFile(page); refreshPageTraceabilityHashes(page); validatePageQuality(page, false);
   updatePageState(id, { enrichStatus: 'completed', enrichedAt: now(), enrichedHash: pageCurrentHash(page) });
 }
 async function doEnrichBatch(pages, progressLabel = '') {
@@ -1622,7 +1731,7 @@ async function doEnrichBatch(pages, progressLabel = '') {
   await runCommandCode('enrich', renderPrompt('enrich-batch.md', { PAGES_JSON: JSON.stringify(pending.map(pageRuntimeContract), null, 2) }), pending.map((p) => p.id).join(','), progressLabel);
   const failures = [];
   for (const page of pending) {
-    try { validatePageFile(page); ensurePageTraceability(page); validatePageQuality(page, false); updatePageState(page.id, { enrichStatus: 'completed', enrichedAt: now(), enrichedHash: pageCurrentHash(page) }); }
+    try { validatePageFile(page); refreshPageTraceabilityHashes(page); validatePageQuality(page, false); updatePageState(page.id, { enrichStatus: 'completed', enrichedAt: now(), enrichedHash: pageCurrentHash(page) }); }
     catch (e) { failures.push(page); }
   }
   for (const page of failures) await doEnrich(page.id, 'individual fallback after enrich batch', true);
@@ -1667,7 +1776,7 @@ function rebuildTraceabilityIndex() {
     if (polarityConflict || exclusiveConflict) contradictions.push({ id: `contradiction-${contradictions.length + 1}`, key, severity: factual.some((x) => x.classification === 'FACT') ? 'high' : 'medium', claims: factual.map((x) => ({ id: x.id, pageId: x.pageId, statement: x.statement, classification: x.classification, object: x.object, polarity: x.polarity, exclusivePredicate:x.exclusivePredicate })) });
   }
   const currentSource = currentSourceSnapshot(true);
-  const freshnessPages = pages.map((p) => ({ ...p, currentPageHash: fileSha256(path.join(root,p.pagePath)), currentInputHash: pageInputHash(findPage(p.pageId)), currentSourceSnapshot: currentSource, sourceStale: Boolean(p.sourceSnapshot?.sourceFingerprint && currentSource.sourceFingerprint && p.sourceSnapshot.sourceFingerprint !== currentSource.sourceFingerprint), stale: p.pageHash !== fileSha256(path.join(root,p.pagePath)) || p.inputHash !== pageInputHash(findPage(p.pageId)) || Boolean(p.sourceSnapshot?.sourceFingerprint && currentSource.sourceFingerprint && p.sourceSnapshot.sourceFingerprint !== currentSource.sourceFingerprint) }));
+  const freshnessPages = pages.map((p) => { const page=findPage(p.pageId); const currentPageHash=pageCurrentHash(page); const currentInputHash=pageInputHash(page); const sourceStale=Boolean(p.sourceSnapshot?.sourceFingerprint && currentSource.sourceFingerprint && p.sourceSnapshot.sourceFingerprint !== currentSource.sourceFingerprint); return { ...p, currentPageHash, currentInputHash, currentSourceSnapshot: currentSource, sourceStale, stale: p.pageHash !== currentPageHash || p.inputHash !== currentInputHash || sourceStale }; });
   const index = { schemaVersion:'1.0', generatedAt:now(), sourceSnapshot:currentSourceSnapshot(), pages, claims, summary:{ pages:pages.length, claims:claims.length, groundedClaims:claims.filter((c)=>(c.evidence??[]).length||(c.sourceModelRefs??[]).length).length, duplicateGroups:duplicateGroups.length, contradictions:contradictions.length, claimIdCollisions:claimIdCollisions.length, stalePages:freshnessPages.filter((x)=>x.stale).length } };
   index.claimIdCollisions=claimIdCollisions; writeJson(traceabilityIndexPath,index); writeJson(duplicatesPath,{schemaVersion:'1.0',generatedAt:now(),groups:duplicateGroups}); writeJson(contradictionsPath,{schemaVersion:'1.0',generatedAt:now(),contradictions}); writeJson(freshnessPath,{schemaVersion:'1.0',generatedAt:now(),sourceSnapshot:index.sourceSnapshot,pages:freshnessPages}); return {index,duplicateGroups,contradictions,claimIdCollisions,freshnessPages};
 }
@@ -1795,7 +1904,7 @@ async function doFix(id, progressLabel = '') {
   const audit = path.join(root, '.docgen', 'audit', 'pages', `${id}.json`);
   if (!fs.existsSync(audit)) fail(`Missing audit for ${id}. Run audit first.`);
   await runCommandCode('fix', renderPrompt('fix.md', { PAGE_JSON: JSON.stringify(pageRuntimeContract(page), null, 2), PAGE_ID: id }), id, progressLabel);
-  validatePageFile(page); ensurePageTraceability(page);
+  validatePageFile(page); refreshPageTraceabilityHashes(page);
   if (isComprehensive()) validatePageQuality(page, false);
 }
 async function doFixAll() {
@@ -1814,6 +1923,56 @@ function normalizeRepoPath(value) {
   return String(value ?? '').replaceAll('\\', '/').replace(/^\.\//, '').replace(/^\/+/, '').replace(/\/+$/, '');
 }
 function regexEscape(value) { return value.replace(/[|\\{}()[\]^$+?.]/g, '\\$&'); }
+const DEFAULT_BINARY_EXTENSIONS = new Set([
+  '.png','.jpg','.jpeg','.gif','.webp','.bmp','.ico','.tif','.tiff','.avif','.heic','.psd','.ai','.eps',
+  '.mp3','.wav','.flac','.aac','.ogg','.m4a','.wma','.mid','.midi',
+  '.mp4','.m4v','.mov','.avi','.mkv','.webm','.wmv','.flv','.mpeg','.mpg','.3gp',
+  '.pdf','.doc','.docx','.xls','.xlsx','.ppt','.pptx','.odt','.ods','.odp','.rtf',
+  '.zip','.gz','.tgz','.bz2','.xz','.7z','.rar','.tar','.jar','.war','.ear','.class','.dll','.exe','.so','.dylib','.o','.a','.lib',
+  '.woff','.woff2','.ttf','.otf','.eot','.bin','.dat','.db','.sqlite','.sqlite3','.pack','.idx','.p12','.pfx','.jks','.keystore',
+  '.apk','.ipa','.deb','.rpm','.iso','.dmg','.img','.wasm','.pyc','.pyo'
+]);
+const DEFAULT_TEXT_EXTENSIONS = new Set([
+  '.txt','.md','.mdx','.adoc','.rst','.java','.kt','.kts','.groovy','.scala','.clj','.cljs','.go','.rs','.cs','.fs','.fsx',
+  '.c','.h','.cc','.cpp','.cxx','.hpp','.m','.mm','.swift','.dart','.py','.rb','.php','.pl','.pm','.lua','.r','.jl',
+  '.js','.mjs','.cjs','.jsx','.ts','.tsx','.vue','.svelte','.html','.htm','.css','.scss','.sass','.less',
+  '.xml','.xsd','.xsl','.xslt','.svg','.json','.jsonl','.yaml','.yml','.toml','.ini','.cfg','.conf','.properties','.env',
+  '.sql','.graphql','.gql','.proto','.thrift','.avsc','.bpmn','.dmn','.sh','.bash','.zsh','.fish','.ps1','.bat','.cmd',
+  '.dockerfile','.gradle','.make','.mk','.tf','.tfvars','.hcl','.rego','.feature','.csv','.tsv','.log','.lock'
+]);
+function binaryConfig(config = loadConfig()) {
+  const cfg = config.ignore?.binary ?? {};
+  return {
+    enabled: cfg.enabled !== false,
+    probeBytes: Math.max(512, Number(cfg.probeBytes ?? 16384)),
+    maxTextFileBytes: Math.max(1024, Number(cfg.maxTextFileBytes ?? 4 * 1024 * 1024)),
+    controlCharacterRatio: Math.max(0, Math.min(1, Number(cfg.controlCharacterRatio ?? 0.08))),
+    allowExtensions: new Set([...(config.sourceExtensions ?? []), ...(cfg.allowExtensions ?? [])].map((x)=>String(x).toLowerCase())),
+    denyExtensions: new Set([...(cfg.denyExtensions ?? [])].map((x)=>String(x).toLowerCase()))
+  };
+}
+function hasBinaryMagic(buf) {
+  if (!buf?.length) return false;
+  const sig=(...bytes)=>bytes.every((b,i)=>buf[i]===b);
+  return sig(0x89,0x50,0x4e,0x47)||sig(0xff,0xd8,0xff)||sig(0x47,0x49,0x46,0x38)||sig(0x25,0x50,0x44,0x46)||sig(0x50,0x4b,0x03,0x04)||sig(0x1f,0x8b)||sig(0x7f,0x45,0x4c,0x46)||sig(0x4d,0x5a)||sig(0x00,0x61,0x73,0x6d)||sig(0xca,0xfe,0xba,0xbe)||sig(0x52,0x49,0x46,0x46);
+}
+function classifySourceFile(fullPath, relPath, config = loadConfig()) {
+  const cfg=binaryConfig(config);
+  if (!cfg.enabled) return { text:true, reason:null, size:fs.existsSync(fullPath)?fs.statSync(fullPath).size:0 };
+  let stat; try { stat=fs.statSync(fullPath); } catch { return { text:false, reason:'unreadable-source-file', size:0 }; }
+  const ext=path.extname(relPath).toLowerCase();
+  if (cfg.denyExtensions.has(ext) || (!cfg.allowExtensions.has(ext) && DEFAULT_BINARY_EXTENSIONS.has(ext))) return { text:false, reason:`binary-extension:${ext || '<none>'}`, size:stat.size };
+  if (stat.size > cfg.maxTextFileBytes) return { text:false, reason:`text-file-too-large:${stat.size}`, size:stat.size };
+  const declaredText = cfg.allowExtensions.has(ext) || DEFAULT_TEXT_EXTENSIONS.has(ext);
+  let buf; try { const fd=fs.openSync(fullPath,'r'); buf=Buffer.alloc(Math.min(cfg.probeBytes, stat.size)); const n=fs.readSync(fd,buf,0,buf.length,0); fs.closeSync(fd); buf=buf.subarray(0,n); } catch { return { text:false, reason:'unreadable-source-file', size:stat.size }; }
+  if (hasBinaryMagic(buf)) return { text:false, reason:'binary-magic-signature', size:stat.size };
+  if (buf.includes(0)) return { text:false, reason:'binary-null-byte', size:stat.size };
+  let decoded=''; try { decoded=new TextDecoder('utf-8',{fatal:true}).decode(buf); } catch { return { text:false, reason:'non-utf8-content', size:stat.size }; }
+  let controls=0; for(const ch of decoded){const c=ch.codePointAt(0);if(c<32&&!['\n','\r','\t','\f','\b'].includes(ch))controls++;}
+  const ratioValue=decoded.length?controls/decoded.length:0;
+  if(ratioValue>cfg.controlCharacterRatio)return{text:false,reason:`binary-control-ratio:${ratioValue.toFixed(3)}`,size:stat.size};
+  return { text:true, reason:null, size:stat.size };
+}
 function ignorePatternRegex(pattern, anchored = false) {
   let body = ''; let i = 0;
   while (i < pattern.length) {
@@ -1866,11 +2025,12 @@ function configExcludeDecision(relPath, isDirectory, config) {
   return null;
 }
 function gitRepositoryAvailable() {
-  if (!commandExists('git')) return false;
+  if (gitRepositoryAvailabilityCache !== null) return gitRepositoryAvailabilityCache;
+  if (!commandExists('git')) return (gitRepositoryAvailabilityCache=false);
   const marker = path.join(root, '.git');
-  if (fs.existsSync(marker)) return true;
+  if (fs.existsSync(marker)) return (gitRepositoryAvailabilityCache=true);
   const r = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: root, encoding: 'utf8', shell: process.platform === 'win32' });
-  return r.status === 0 && String(r.stdout ?? '').trim() === 'true';
+  return (gitRepositoryAvailabilityCache = r.status === 0 && String(r.stdout ?? '').trim() === 'true');
 }
 function gitIgnoredBatch(paths) {
   if (!paths.length || !gitRepositoryAvailable()) return new Set();
@@ -1906,6 +2066,7 @@ function ignoreDecision(relPath, isDirectory = false, config = loadConfig()) {
   if (!normalized) return { ignored: false, reason: null };
   const hard = hardIgnoreDecision(normalized, isDirectory, config);
   if (hard) return hard;
+  // The canonical inventory already performed ignore + binary/text classification. Reuse it on hot validation paths.
   if (!isDirectory && sourceInventoryCache?.includedSet?.has(normalized)) return { ignored:false, reason:null };
   if (config.ignore?.useGitignore !== false) {
     const gitRepo = gitRepositoryAvailable();
@@ -1917,6 +2078,10 @@ function ignoreDecision(relPath, isDirectory = false, config = loadConfig()) {
     const ignoreFile = path.join(root, config.ignore?.docgenignoreFile || '.docgenignore');
     const matched = matchIgnoreRules(normalized, isDirectory, loadIgnoreRules(ignoreFile));
     if (matched) return matched;
+  }
+  if (!isDirectory) {
+    const full = path.join(root, normalized);
+    if (fs.existsSync(full)) { const classified = classifySourceFile(full, normalized, config); if (!classified.text) return { ignored:true, reason:classified.reason }; }
   }
   return { ignored: false, reason: null };
 }
@@ -1942,21 +2107,24 @@ function buildSourceInventory(options = {}) {
   const gitRepo = gitRepositoryAvailable();
   const gitIgnored = config.ignore?.useGitignore === false ? new Set() : gitIgnoredBatch(candidates);
   const docgenRules = config.ignore?.useDocgenignore === false ? [] : loadIgnoreRules(path.join(root, config.ignore?.docgenignoreFile || '.docgenignore'));
-  const included = []; const ignoredSamples = []; const reasonCounts = {};
+  const included = []; const ignoredSamples = []; const reasonCounts = {}; let includedBytes=0; let excludedBytes=0; let binaryExcludedCount=0;
   for (const item of [...new Set(candidates)].sort()) {
     const full = path.join(root, item);
     if (!fs.existsSync(full) || !fs.statSync(full).isFile()) continue;
+    const stat=fs.statSync(full);
     let decision = hardIgnoreDecision(item, false, config);
     if (!decision && gitIgnored.has(item)) decision = { ignored: true, reason: '.gitignore' };
     if (!decision && !gitRepo && config.ignore?.useGitignore !== false) decision = fallbackGitIgnoreDecision(item, false);
     if (!decision && docgenRules.length) decision = matchIgnoreRules(item, false, docgenRules);
+    if (!decision) { const classified=classifySourceFile(full,item,config); if(!classified.text){decision={ignored:true,reason:classified.reason};binaryExcludedCount++;} }
     if (decision?.ignored) {
+      excludedBytes += stat.size;
       reasonCounts[decision.reason] = (reasonCounts[decision.reason] ?? 0) + 1;
-      if (ignoredSamples.length < 500) ignoredSamples.push({ path: item, reason: decision.reason });
-    } else included.push(item);
+      if (ignoredSamples.length < 500) ignoredSamples.push({ path: item, reason: decision.reason, size:stat.size });
+    } else { included.push(item); includedBytes += stat.size; }
   }
   const controlFiles = ['.gitignore', config.ignore?.docgenignoreFile || '.docgenignore'].filter((x) => fs.existsSync(path.join(root, x)));
-  const report = { schemaVersion: '1.0', generatedAt: now(), usedGit, gitAvailable: commandExists('git'), gitRepository: gitRepo, includedCount: included.length, ignoredSampleCount: ignoredSamples.length, reasonCounts, controlFiles, includedFiles: options.includeFiles === false ? undefined : included, ignoredSamples };
+  const report = { schemaVersion: '1.1', generatedAt: now(), usedGit, gitAvailable: commandExists('git'), gitRepository: gitRepo, includedCount: included.length, binaryOrNonTextExcludedCount:binaryExcludedCount, includedBytes, excludedBytes, ignoredSampleCount: ignoredSamples.length, reasonCounts, controlFiles, includedFiles: options.includeFiles === false ? undefined : included, ignoredSamples };
   return report;
 }
 function writeSourceInventory() {
@@ -1970,6 +2138,7 @@ function writeSourceInventory() {
 }
 function walkFiles(dir, config, out = []) {
   const inventory = buildSourceInventory();
+  sourceInventoryCache = { inventory, includedSet:new Set(inventory.includedFiles ?? []) };
   for (const relPath of inventory.includedFiles ?? []) out.push(path.join(root, relPath));
   return out;
 }
@@ -2017,6 +2186,8 @@ function doIgnore(target) {
     return;
   }
   console.log(`Included source files: ${inventory.includedCount}`);
+  console.log(`Binary/non-text/oversized files excluded: ${inventory.binaryOrNonTextExcludedCount ?? 0}`);
+  console.log(`Included source bytes: ${inventory.includedBytes ?? 0}`);
   console.log(`Git ignore engine: ${inventory.usedGit ? 'active' : inventory.gitAvailable ? 'fallback inventory' : 'git unavailable'}`);
   console.log(`.docgenignore: ${fs.existsSync(path.join(root, loadConfig().ignore?.docgenignoreFile || '.docgenignore')) ? 'present' : 'not present'}`);
   console.log(`Source list: ${rel(sourceFilesPath)}`);
@@ -2092,6 +2263,8 @@ function contractSelfTest() {
   check('ignore pattern semantics', () => { const rules=[{raw:'private/**',pattern:'private/**',negated:false,directoryOnly:false,anchored:false,regex:ignorePatternRegex('private/**',false)},{raw:'!private/public.md',pattern:'private/public.md',negated:true,directoryOnly:false,anchored:false,regex:ignorePatternRegex('private/public.md',false)}]; if(!matchIgnoreRules('private/secret.md',false,rules)?.ignored) throw new Error('ignore rule not applied'); if(matchIgnoreRules('private/public.md',false,rules)?.ignored) throw new Error('negation not applied'); });
   check('update-plan aliases', () => assertCanonicalModel('update', normalizeUpdatePlanObject({ changedFiles:['a'], scopes:['.'], models:['system'], pages:['overview'], reasons:['x'] }), ['changedPaths','affectedEvidenceScopes','affectedModels','affectedPageIds','rationale']));
   check('page path variants', () => { for (const x of ['orientation/overview','/orientation/overview.md','docs/orientation/overview','docs/orientation/overview.md']) if (canonicalPagePath(x) !== 'docs/orientation/overview.md') throw new Error(x); });
+  check('binary signature detection', () => { if(!hasBinaryMagic(Buffer.from([0x89,0x50,0x4e,0x47])))throw new Error('PNG magic not detected'); if(hasBinaryMagic(Buffer.from('plain text')))throw new Error('text misclassified'); });
+  check('documentation mode defaults', () => { const allowed=new Set(loadConfig().documentationExperience?.modes??[]); for(const x of ['tutorial','how-to','explanation','reference','runbook','decision-record','migration-guide','troubleshooting'])if(!allowed.has(x))throw new Error(`missing mode ${x}`); });
   check('audit aliases', () => { const page = { id: 'overview', path: 'docs/orientation/overview.md' }; const x = normalizeAuditReportObject({ id: 'overview', path: 'orientation/overview', hash: 'abc', inputHash: 'def', issues: ['x'] }, page); if (x.pagePath !== page.path || x.findings.length !== 1) throw new Error('audit normalization'); });
   check('normalizer idempotence', () => {
     const samples = [
@@ -2331,6 +2504,7 @@ Project commands:
   docgen audit <id|--all>
   docgen fix <id|--all>
   docgen traceability           rebuild claim index, contradiction, duplicate, and freshness reports
+  docgen publish                generate frontmatter, llms.txt, search/navigation/backlinks/redirects/examples metadata
   docgen quality                run evidence-centric semantic + audit quality gates
   docgen snapshot
   docgen changed
@@ -2380,6 +2554,7 @@ switch (command) {
   case 'audit': if (args[0] === '--all') await doAuditAll(); else if (args[0]) { await doAudit(args[0]); rebuildAuditIndex(); writeQualitySummary(); } else fail('audit requires <page-id|--all>'); break;
   case 'fix': if (args[0] === '--all') await doFixAll(); else if (args[0]) await doFix(args[0]); else fail('fix requires <page-id|--all>'); break;
   case 'traceability': doTraceability(); break;
+  case 'publish': doPublish(); break;
   case 'quality': doQuality(); break;
   case 'snapshot': doSnapshot(); break;
   case 'changed': console.log(changedPaths().join('\n')); break;
@@ -2416,7 +2591,7 @@ switch (command) {
       }
     }
     printItemProgress('phase', 8, 8, 'quality summary + source snapshot');
-    writeQualitySummary(); doSnapshot(); doQuality();
+    writeQualitySummary(); doPublish(); doSnapshot(); doQuality();
     break;
   }
   default: usage(); process.exit(2);

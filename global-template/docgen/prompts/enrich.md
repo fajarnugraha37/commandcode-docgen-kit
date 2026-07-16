@@ -36,3 +36,6 @@ Claim-level traceability contract:
 Traceability contradiction precision:
 - Set `exclusivePredicate: true` only when the subject/predicate is single-valued and different objects would be mutually exclusive.
 - Leave it false for multi-valued relations such as “has component”, “uses service”, or “emits event”.
+
+
+P2 page experience: follow the page `mode` precisely. Generate evidence-derived examples for declared `exampleIntents`; label placeholders. Include deprecation/migration/rollback information when declared. The orchestrator owns canonical frontmatter and publishing indexes; do not invent renderer-specific metadata.

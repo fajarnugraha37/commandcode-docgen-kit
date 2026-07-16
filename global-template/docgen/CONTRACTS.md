@@ -25,6 +25,7 @@ DocGen treats every LLM-produced artifact as untrusted, uncommitted output until
 | cross-page consistency | `.docgen/traceability/{index,contradictions,duplicates,freshness}.json` | unique claim IDs, contradiction groups, duplicate groups, freshness |
 | audit | `.docgen/audit/pages/<page-id>.json` | `pageId`, `pagePath`, `pageHash`, `inputHash`, `findings` |
 | update-impact | `.docgen/plan/update-plan.json` | `changedPaths`, `affectedEvidenceScopes`, `affectedModels`, `affectedPageIds`, `rationale` |
+| publishing | `.docgen/publish/*.json`, `docs/llms*.txt`, page frontmatter | mode, aliases, lifecycle/version metadata, search/navigation/backlink/redirect/example indexes |
 
 ## Invariants
 
@@ -45,6 +46,10 @@ DocGen treats every LLM-produced artifact as untrusted, uncommitted output until
 15. **Ignore-aware source boundary** — `.gitignore`, `.docgenignore`, hard exclusions, and project `config.exclude` produce one canonical source inventory used by every stage.
 16. **Ignored evidence rejection** — an ignored path cannot support a typed FACT or page claim.
 17. **Enterprise-depth coverage** — security, operations, testing, data governance, decisions, configuration, change impact, and ownership use typed, evidence-backed item contracts.
+18. **Binary/non-text budget boundary** — binary extensions, magic signatures, NUL bytes, invalid UTF-8, excessive control characters, and oversized text are excluded before reads, fingerprints, change detection, or evidence validation.
+19. **Mode-aware documentation** — every planned page has a canonical document mode and mode-specific structural contract.
+20. **Deterministic publishing** — frontmatter, navigation, search, backlinks, redirects, orphan reports, examples indexes, and `llms*.txt` are produced without a provider call.
+21. **Evidence-derived examples** — publishable examples must map to page claims and source/model references; generic unsupported examples do not satisfy the quality contract.
 
 Run the zero-token suite with:
 

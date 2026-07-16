@@ -1,6 +1,6 @@
 {
   "name": "commandcode-docgen-kit",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "defaultInstallationScope": "global",
   "globalComponents": [
     "agents",
@@ -23,18 +23,19 @@
     ".docgen/traceability",
     "docs",
     ".docgen/quarantine",
-    ".docgenignore"
+    ".docgenignore",
+    ".docgen/publish"
   ],
   "counts": {
     "agents": 7,
-    "skills": 38,
-    "commands": 19,
-    "schemas": 23,
+    "skills": 42,
+    "commands": 20,
+    "schemas": 24,
     "prompts": 13
   },
   "contractFirewall": {
     "boundaries": 19,
-    "deterministicTests": 19,
+    "deterministicTests": 21,
     "transactionalStages": 6,
     "zeroTokenCommand": "docgen contract-test"
   },
@@ -64,6 +65,18 @@
     "readHook": true,
     "sourceInventory": true,
     "fingerprintsRespectIgnore": true,
-    "traceabilityRejectsIgnoredEvidence": true
+    "traceabilityRejectsIgnoredEvidence": true,
+    "binaryAndNonText": true,
+    "magicAndUtf8Probe": true
+  },
+  "p2DocumentationExperience": {
+    "documentModes": true,
+    "frontmatter": true,
+    "llmsTxt": true,
+    "searchIndex": true,
+    "backlinks": true,
+    "aliasesRedirects": true,
+    "versionDeprecationMigration": true,
+    "evidenceDerivedExamples": true
   }
 }

@@ -61,7 +61,8 @@
           "requiredSections",
           "diagramIntents",
           "coverageTags",
-          "relatedPages"
+          "relatedPages",
+          "mode"
         ],
         "properties": {
           "id": {
@@ -87,7 +88,16 @@
               "data",
               "integration",
               "operations",
-              "troubleshooting"
+              "troubleshooting",
+              "security",
+              "testing",
+              "configuration",
+              "decision",
+              "ownership",
+              "maintenance",
+              "tutorial",
+              "runbook",
+              "migration"
             ]
           },
           "category": {
@@ -154,6 +164,79 @@
             "items": {
               "type": "string"
             }
+          },
+          "mode": {
+            "enum": [
+              "tutorial",
+              "how-to",
+              "explanation",
+              "reference",
+              "runbook",
+              "decision-record",
+              "migration-guide",
+              "troubleshooting"
+            ]
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^docs/.*\\.md$"
+            }
+          },
+          "status": {
+            "enum": [
+              "active",
+              "deprecated",
+              "draft",
+              "experimental",
+              "superseded"
+            ]
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deprecatedSince": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replacementPage": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "migrationFrom": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "migrationTo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "exampleIntents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "searchKeywords": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "frontmatter": {
+            "type": "object"
           }
         }
       }

@@ -44,7 +44,7 @@ Build a navigation taxonomy with categories and pages appropriate to the reposit
 - operations, failure modes, recovery and troubleshooting;
 - reference pages where exhaustive lists are useful.
 
-Every page must define category, purpose, summary, audience, evidence/models, required sections, Mermaid diagram intents, coverageTags, related pages, and optional required tables/quality hints.
+Every page must define category, purpose, summary, audience, evidence/models, required sections, Mermaid diagram intents, coverageTags, related pages, document mode, search keywords, aliases where relevant, lifecycle/version/deprecation metadata, evidence-derived example intents, and optional required tables/quality hints.
 
 Required coverage tags are conditional on evidence. Examples:
 `system-overview`, `architecture`, `security-trust-boundaries`, `authorization-model`, `data-governance`, `consistency-transactions`, `operations-observability`, `failure-recovery`, `testing-strategy`, `configuration-matrix`, `architecture-decisions`, `change-impact`, `ownership-responsibilities`, `business-domain`, `business-rules`, `branch-conditions`, `state-lifecycle`, `business-flow`, `control-flow`, `request-flow`, `traffic-flow`, `data-model`, `data-flow`, `event-flow`, `endpoint-catalog`, `message-handler-catalog`, `external-dependency-catalog`, `persistence`, `security`, `configuration`, `operations`, `troubleshooting`.
@@ -59,3 +59,12 @@ Hard manifest rules:
 - `evidence[]` and `models[]` must contain exact existing repository-relative paths or exact evidence artifact IDs from `.docgen/evidence/index.json`;
 - never invent shorthand filenames such as `system.json` when the actual path is `.docgen/model/system.json`;
 - before finishing, verify all page ids, paths, navigation references, evidence references and model references.
+
+
+P2 documentation experience rules:
+- choose exactly one primary mode: tutorial, how-to, explanation, reference, runbook, decision-record, migration-guide, or troubleshooting;
+- plan user journeys from orientation to task completion to deep reference;
+- create migration/deprecation pages when evidence exists;
+- use stable aliases for renamed/moved pages;
+- declare exampleIntents only when examples can be grounded in evidence/tests/contracts;
+- include searchKeywords and clear relatedPages/backlinks.

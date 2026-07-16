@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.5",
+  "schemaVersion": "1.6",
   "projectName": "",
   "outputRoot": "docs",
   "discoveryScopes": [
@@ -76,7 +76,10 @@
     "configuration",
     "decision",
     "ownership",
-    "maintenance"
+    "maintenance",
+    "tutorial",
+    "runbook",
+    "migration"
   ],
   "requireEvidenceReferences": true,
   "diagramFormat": "mermaid",
@@ -262,6 +265,80 @@
     "useDocgenignore": true,
     "docgenignoreFile": ".docgenignore",
     "writeReport": true,
-    "rejectIgnoredEvidence": true
+    "rejectIgnoredEvidence": true,
+    "binary": {
+      "enabled": true,
+      "probeBytes": 16384,
+      "maxTextFileBytes": 4194304,
+      "controlCharacterRatio": 0.08,
+      "allowExtensions": [],
+      "denyExtensions": []
+    }
+  },
+  "documentationExperience": {
+    "enabled": true,
+    "modes": [
+      "tutorial",
+      "how-to",
+      "explanation",
+      "reference",
+      "runbook",
+      "decision-record",
+      "migration-guide",
+      "troubleshooting"
+    ],
+    "requireMode": true,
+    "generateFrontmatter": true,
+    "generateLlmsTxt": true,
+    "generateLlmsFull": true,
+    "llmsFullMaxBytes": 5242880,
+    "generateSearchIndex": true,
+    "generateBacklinks": true,
+    "generateRedirects": true,
+    "generateExamplesIndex": true,
+    "requireEvidenceDerivedExamples": true,
+    "versioning": true,
+    "deprecationMetadata": true,
+    "adoptPreP2Pages": true,
+    "enforceModeSections": true,
+    "modeRequiredSections": {
+      "tutorial": [
+        "Prerequisites",
+        "Walkthrough",
+        "Next Steps"
+      ],
+      "how-to": [
+        "Prerequisites",
+        "Steps",
+        "Verification"
+      ],
+      "explanation": [],
+      "reference": [],
+      "runbook": [
+        "Symptoms",
+        "Diagnosis",
+        "Procedure",
+        "Verification",
+        "Escalation"
+      ],
+      "decision-record": [
+        "Context",
+        "Decision",
+        "Alternatives",
+        "Consequences"
+      ],
+      "migration-guide": [
+        "Prerequisites",
+        "Migration Steps",
+        "Verification",
+        "Rollback"
+      ],
+      "troubleshooting": [
+        "Symptoms",
+        "Diagnosis",
+        "Resolution",
+        "Verification"
+      ]
+    }
   }
 }

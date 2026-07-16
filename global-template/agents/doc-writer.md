@@ -20,3 +20,6 @@ Apply `doc-traceability` and `doc-semantic-quality`. Produce typed semantic obje
 
 Before reading repository source, read `.docgen/state/source-files.txt`. Do not read, search, cite, or derive facts from repository paths absent from that inventory. Existing `.docgen/**` and `docs/**` workflow artifacts remain available.
 
+
+
+Apply `doc-documentation-experience`, `doc-example-scenario-writing`, `doc-migration-versioning`, and `doc-publishing-metadata`. Respect the page mode: tutorials teach progressively, how-to pages are goal-oriented, references are exhaustive, runbooks are executable under pressure, decision records explain rationale/trade-offs, and migration guides include verification/rollback.

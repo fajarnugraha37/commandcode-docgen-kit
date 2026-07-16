@@ -38,19 +38,20 @@ Install the engine once. Initialize any number of repositories independently.
 
 ---
 
-## What's new in v0.8.0
+## What's new in v0.9.0
 
-v0.8.0 is the **P1 Enterprise Depth and Source-Boundary release**. It retains the P0 trustworthiness and contract-firewall controls from v0.7.0, then adds first-class enterprise models for security, operability, testing, data governance, architectural decisions, configuration, change impact, and ownership.
+v0.9.0 is the **P2 Documentation Experience and Binary Budget Guard release**. It retains the P0 trustworthiness and P1 enterprise-depth controls, then turns the generated Markdown tree into a publishable documentation product with user-intent document modes, stable publishing metadata, navigation/search assets, aliases and redirects, backlinks, version/deprecation/migration metadata, and evidence-derived examples.
 
-It also makes `.gitignore` and `.docgenignore` a **hard source boundary**. Ignored paths are excluded from repository discovery, source fingerprints, change detection, traceability, FACT evidence, and DocGen-controlled read/search operations.
+It also adds a hard **binary and non-text source boundary**. Images, audio/video, PDFs and office files, archives, compiled artifacts, fonts, databases, keystores, invalid UTF-8 payloads, NUL-containing files, and oversized text are excluded before an LLM can read them. This boundary applies to inventory, discovery, grep, fingerprints, change detection, freshness, and evidence validation.
 
-The full knowledge pipeline is now:
+The full knowledge and publishing pipeline is now:
 
 ```text
 repository source inventory
       │
       ├── .gitignore
       ├── .docgenignore
+      ├── binary/non-text classifier
       └── deterministic hard exclusions
       │
       ▼
@@ -66,14 +67,57 @@ business + flow + interface semantics
 P1 enterprise-depth models
       │
       ▼
-coverage-driven multi-page plan
+coverage-driven, mode-aware multi-page plan
       │
       ▼
-generation + traceability
+generation + evidence-derived examples + traceability
       │
       ▼
 audit + semantic quality gates
+      │
+      ▼
+deterministic publishing assets
+      ├── Markdown frontmatter
+      ├── llms.txt / llms-full.txt
+      ├── navigation and search index
+      ├── backlinks
+      ├── aliases and redirects
+      ├── orphan report
+      └── examples index
 ```
+
+### P2 documentation experience
+
+| Capability | Output / behavior |
+|---|---|
+| Document modes | `tutorial`, `how-to`, `explanation`, `reference`, `runbook`, `decision-record`, `migration-guide`, `troubleshooting` |
+| Publishing metadata | Deterministic YAML frontmatter with title, audience, mode, status, version, source commit, coverage, aliases and deprecation metadata |
+| LLM discovery files | `docs/llms.txt` and optional bounded `docs/llms-full.txt` |
+| Navigation and search | `.docgen/publish/navigation.json` and `search-index.json` |
+| Knowledge graph | `.docgen/publish/backlinks.json` and orphan-page report |
+| URL lifecycle | Alias/redirect map plus replacement and migration metadata |
+| Examples | Evidence-derived scenario/example index with traceability references |
+| Provider cost | Publishing is deterministic; it does not add an LLM call. Existing pre-P2 pages are adopted and only targeted for enrichment when the P2 contract is missing. |
+
+Run the deterministic publishing stage independently:
+
+```bash
+docgen publish
+```
+
+### Binary and non-text budget guard
+
+DocGen classifies source files before discovery. The default policy excludes known binary extensions, magic signatures, NUL-containing payloads, invalid UTF-8, excessive control characters, and files larger than the configured text-size limit. UTF-8 text without a known extension remains eligible.
+
+Inspect the effective boundary without using provider tokens:
+
+```bash
+docgen ignore
+docgen source-list
+docgen source-grep "@Path"
+```
+
+Configuration lives under `ignore.binary` in `.docgen/config/documentation.json`.
 
 ### P1 enterprise-depth models
 
@@ -185,7 +229,7 @@ Phase 8/8  semantic quality summary + source snapshot
 ### Upgrade from v0.7.0
 
 ```powershell
-# Install the global v0.8.0 engine
+# Install the global v0.9.0 engine
 .\install.ps1 -Force
 
 cd C:\path\to\repository
@@ -201,7 +245,7 @@ Migration is additive: existing project values, evidence, models, pages, traceab
 
 ## P0 trustworthiness retained from v0.7.0
 
-v0.8.0 retains strongly typed semantic items, claim-level traceability, evidence-centric quality metrics, cross-page contradiction and duplicate detection, source freshness metadata, transactional contract boundaries, and advisory rather than primary word-count gates.
+v0.9.0 retains strongly typed semantic items, claim-level traceability, evidence-centric quality metrics, cross-page contradiction and duplicate detection, source freshness metadata, transactional contract boundaries, and advisory rather than primary word-count gates.
 
 ### Strongly typed semantic items
 
@@ -359,7 +403,7 @@ A page becomes stale when its Markdown changes, declared evidence/model content 
 ### Upgrade from v0.6.0
 
 ```powershell
-# Install the global v0.8.0 engine
+# Install the global v0.9.0 engine
 .\install.ps1 -Force
 
 cd C:\path	o
@@ -384,7 +428,7 @@ docgen validate       # contract + static + generated artifact validation
 
 ## Contract firewall retained from v0.6.0
 
-v0.8.0 retains the **contract firewall** introduced in v0.6.0. It addresses the root class behind both expensive failures reported in earlier versions:
+v0.9.0 retains the **contract firewall** introduced in v0.6.0. It addresses the root class behind both expensive failures reported in earlier versions:
 
 ```text
 LLM producer emits a reasonable representation
@@ -491,7 +535,7 @@ A page is skipped only while that input fingerprint remains current. Existing va
 ### Safe recovery from the reported failure
 
 ```powershell
-# From the extracted v0.8.0 package
+# From the extracted v0.9.0 package
 .\install.ps1 -Force
 
 cd C:\path\to\your\repository
@@ -607,7 +651,7 @@ DocGen does not require a particular renderer.
 
 Earlier versions of the kit copied the entire engine into every target repository. That model is useful for a fully self-contained team-owned repository, but it is inefficient when one user wants to use the same documentation system across many repositories.
 
-The default architecture in v0.8.0 is therefore:
+The default architecture in v0.9.0 is therefore:
 
 ```text
 install once globally
@@ -745,10 +789,10 @@ Extract the release ZIP first.
 
 ```powershell
 Expand-Archive `
-  .\commandcode-docgen-kit-0.8.0.zip `
+  .\commandcode-docgen-kit-0.9.0.zip `
   -DestinationPath .\commandcode-docgen-kit
 
-cd .\commandcode-docgen-kit\commandcode-docgen-kit-0.8.0
+cd .\commandcode-docgen-kit\commandcode-docgen-kit-0.9.0
 
 .\install.ps1
 ```
@@ -756,8 +800,8 @@ cd .\commandcode-docgen-kit\commandcode-docgen-kit-0.8.0
 ## macOS / Linux
 
 ```bash
-unzip commandcode-docgen-kit-0.8.0.zip
-cd commandcode-docgen-kit-0.8.0
+unzip commandcode-docgen-kit-0.9.0.zip
+cd commandcode-docgen-kit-0.9.0
 ./install.sh
 ```
 
@@ -987,7 +1031,7 @@ docgen snapshot
 
 # Live progress, heartbeat, logs, and error visibility
 
-DocGen v0.8.0 does not run Command Code as a silent blocking child process. Every LLM-backed stage is monitored as a live asynchronous process.
+DocGen v0.9.0 does not run Command Code as a silent blocking child process. Every LLM-backed stage is monitored as a live asynchronous process.
 
 A run now looks like:
 
@@ -1120,7 +1164,7 @@ Command Code reached --max-turns
 
 # Comprehensive quality profile
 
-The default v0.8.0 profile is:
+The default v0.9.0 profile is:
 
 ```json
 {
@@ -2235,7 +2279,7 @@ docgen generate --all
 
 # Contract firewall and transactional artifacts
 
-Prompt instructions are soft constraints. v0.8.0 therefore does not trust an LLM to reproduce an exact JSON spelling or output-path notation.
+Prompt instructions are soft constraints. v0.9.0 therefore does not trust an LLM to reproduce an exact JSON spelling or output-path notation.
 
 ## Single representation principle
 
@@ -2319,7 +2363,7 @@ docgen doctor          # runtime compatibility + contract suite
 
 # Resumability, batching, and checkpoints
 
-v0.8.0 is resumable by default.
+v0.9.0 is resumable by default.
 
 ```powershell
 docgen resume
@@ -2370,7 +2414,7 @@ v0.4.x worst-case baseline
 into:
 
 ```text
-v0.8.0 default baseline
+v0.9.0 default baseline
 ceil(59 / 4) generation batches = 15
 ceil(59 / 6) audit batches      = 10
 enrichment                      = only pages failing local quality gates
@@ -2386,7 +2430,7 @@ docgen all --fresh
 
 # Rate limits, retries, and provider failures
 
-Command Code documents rate-limit failures as exit code `5`; connection failures use `6`, API 5xx failures use `7`, and max-turn exhaustion uses `8`. v0.8.0 handles `5`, `6`, and `7` as retryable by default. It also detects common provider text such as `429`, `rate limit exceeded`, `too many requests`, and `quota exceeded` when a provider reports a generic exit code.
+Command Code documents rate-limit failures as exit code `5`; connection failures use `6`, API 5xx failures use `7`, and max-turn exhaustion uses `8`. v0.9.0 handles `5`, `6`, and `7` as retryable by default. It also detects common provider text such as `429`, `rate limit exceeded`, `too many requests`, and `quota exceeded` when a provider reports a generic exit code.
 
 Default policy:
 
@@ -3070,7 +3114,7 @@ For a team that needs exact engine reproducibility inside the repository, use th
 
 ## Automatic additive migration from v0.3.x project config
 
-When v0.8.0 runs inside a repository initialized by an older global-first release, it additively merges new defaults into `.docgen/config/documentation.json`. Existing custom scalar values and existing array entries are preserved; new page types, audiences, semantics turn-budget defaults, Mermaid-only quality settings, and knowledge-base settings are added. The project marker is updated to the current kit version.
+When v0.9.0 runs inside a repository initialized by an older global-first release, it additively merges new defaults into `.docgen/config/documentation.json`. Existing custom scalar values and existing array entries are preserved; new page types, audiences, semantics turn-budget defaults, Mermaid-only quality settings, and knowledge-base settings are added. The project marker is updated to the current kit version.
 
 You can run the migration explicitly:
 
@@ -3089,13 +3133,13 @@ Version 0.1.x installed the complete engine inside each repository. Version 0.6.
 Recommended migration:
 
 ```bash
-# 1. Install v0.8.0 globally once
+# 1. Install v0.9.0 globally once
 node install.mjs --force
 
 # 2. Enter an existing v0.1.x repository
 cd /path/to/repository
 
-# 3. Add the v0.8.0 project marker/template without replacing existing config
+# 3. Add the v0.9.0 project marker/template without replacing existing config
 docgen init
 
 # 4. Verify the global runtime
@@ -3291,7 +3335,7 @@ Do not delete the generated page or rerun discovery. The canonical path is repai
 
 ## Provider rate limit or HTTP 429
 
-v0.8.0 retries automatically with visible exponential backoff. Review the attempt logs in `.docgen/runs/`. Reduce other concurrent Command Code sessions and lower batch sizes only when the provider still rejects batched requests.
+v0.9.0 retries automatically with visible exponential backoff. Review the attempt logs in `.docgen/runs/`. Reduce other concurrent Command Code sessions and lower batch sizes only when the provider still rejects batched requests.
 
 To make the policy more conservative:
 
@@ -3313,7 +3357,7 @@ To make the policy more conservative:
 
 ## `docgen all` appears to hang or stays quiet
 
-v0.8.0 prints a heartbeat while every Command Code child process is alive. You should see output similar to:
+v0.9.0 prints a heartbeat while every Command Code child process is alive. You should see output similar to:
 
 ```text
 [docgen] discover:. RUNNING | elapsed 1m 20s | pid 18420 | changed artifacts 7
@@ -3696,7 +3740,7 @@ For a repository that requires an exact frozen engine version, use the self-cont
 
 # Compatibility notes
 
-The v0.8.0 architecture intentionally aligns with Command Code user-level and project-level extension scopes:
+The v0.9.0 architecture intentionally aligns with Command Code user-level and project-level extension scopes:
 
 ```text
 User-level reusable components:
@@ -3827,7 +3871,7 @@ This workflow preserves the most important principle of the system:
 
 # Deep system knowledge-base target
 
-DocGen v0.8.0 does **not** treat the two benchmark home pages as the complete target. A Mintlify-style site is a hierarchy of categories, pages, and deep sections. DocGen therefore optimizes for **breadth × depth**:
+DocGen v0.9.0 does **not** treat the two benchmark home pages as the complete target. A Mintlify-style site is a hierarchy of categories, pages, and deep sections. DocGen therefore optimizes for **breadth × depth**:
 
 ```text
 Repository
@@ -3910,7 +3954,7 @@ The discovery contract requires:
 }
 ```
 
-However, cheap models can still emit semantically equivalent shapes such as `files` or `entries`. v0.8.0 normalizes these variants after discovery. If no list exists, it scans `.docgen/evidence/**` and constructs canonical `artifacts[]` deterministically. The exact v0.3.0 failure:
+However, cheap models can still emit semantically equivalent shapes such as `files` or `entries`. v0.9.0 normalizes these variants after discovery. If no list exists, it scans `.docgen/evidence/**` and constructs canonical `artifacts[]` deterministically. The exact v0.3.0 failure:
 
 ```text
 Error: .docgen/evidence/index.json missing required key: artifacts
@@ -3918,3 +3962,57 @@ Error: .docgen/evidence/index.json missing required key: artifacts
 
 is therefore handled by the orchestrator before validation.
 
+
+
+# v0.9.0 — P2 Documentation Experience and Binary Budget Guard
+
+## P2 outputs
+
+DocGen now assigns every page a primary document mode: `tutorial`, `how-to`, `explanation`, `reference`, `runbook`, `decision-record`, `migration-guide`, or `troubleshooting`. The planner records aliases, status/version/deprecation/replacement metadata, search keywords, and evidence-derived example intents.
+
+After generation, `docgen publish` deterministically creates or refreshes:
+
+- canonical YAML frontmatter on every page;
+- `docs/llms.txt`;
+- `docs/llms-full.txt` (bounded by configuration);
+- `.docgen/publish/navigation.json`;
+- `.docgen/publish/search-index.json`;
+- `.docgen/publish/backlinks.json`;
+- `.docgen/publish/redirects.json`;
+- `.docgen/publish/orphans.json`;
+- `.docgen/publish/examples.json`;
+- `.docgen/publish/report.json`.
+
+`docgen all` and `docgen resume` run publishing metadata generation in the final deterministic phase. `docgen publish` itself consumes no LLM tokens.
+
+## Binary/non-text budget guard
+
+The canonical source inventory now excludes images, audio, video, PDFs, Office documents, archives, compiled objects, fonts, databases, keystores, executables, WebAssembly, and other binary/non-text content. Detection uses: known extensions, magic signatures, NUL-byte detection, strict UTF-8 decoding, control-character ratio, and a configurable maximum text file size.
+
+Configuration:
+
+```json
+{
+  "ignore": {
+    "binary": {
+      "enabled": true,
+      "probeBytes": 16384,
+      "maxTextFileBytes": 4194304,
+      "controlCharacterRatio": 0.08,
+      "allowExtensions": [],
+      "denyExtensions": []
+    }
+  }
+}
+```
+
+Binary/non-text files never enter `.docgen/state/source-files.txt`, source grep, source fingerprints, change detection, traceability evidence, or LLM source reads. The read guard rejects explicit attempts to read them during `DOCGEN_MODE=1`. `.gitignore` remains authoritative; `.docgenignore` remains the user-controlled documentation exclusion layer; binary classification is an additional hard budget boundary.
+
+Inspect the result with:
+
+```bash
+docgen ignore
+docgen ignore path/to/image.png
+docgen source-list
+docgen publish
+```
