@@ -80,15 +80,22 @@ function replaceFacts(db, rel, facts) {
 export function indexRepository(root, { force = false } = {}) {
   const paths = projectPaths(root); const inventory = buildInventory(root); const db = openDatabase(paths.database);
   const known = new Map(db.prepare('SELECT path,hash FROM files').all().map((row) => [row.path, row.hash])); const current = new Set(inventory.files.map((x) => x.path));
+  const progress = process.env.DOCGEN_PROGRESS !== '0'; const started = Date.now(); let lastReport = started;
   let changed = 0; let unchanged = 0; let factCount = 0;
+  if (progress) console.log(`[docgen] index RUNNING | ${inventory.files.length.toLocaleString()} included files | force=${force}`);
   db.exec('BEGIN');
   try {
-    for (const file of inventory.files) {
-      if (!force && known.get(file.path) === file.hash) { unchanged++; continue; }
-      const text = fs.readFileSync(path.join(root, file.path), 'utf8'); const facts = extractFacts(file.path, text); factCount += facts.length;
-      replaceFacts(db, file.path, facts);
-      db.prepare('INSERT INTO files(path,hash,size,extension,indexed_at) VALUES(?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET hash=excluded.hash,size=excluded.size,extension=excluded.extension,indexed_at=excluded.indexed_at').run(file.path, file.hash, file.size, file.extension, now());
-      changed++;
+    for (let index = 0; index < inventory.files.length; index++) {
+      const file = inventory.files[index];
+      if (!force && known.get(file.path) === file.hash) unchanged++;
+      else {
+        const text = fs.readFileSync(path.join(root, file.path), 'utf8'); const facts = extractFacts(file.path, text); factCount += facts.length;
+        replaceFacts(db, file.path, facts);
+        db.prepare('INSERT INTO files(path,hash,size,extension,indexed_at) VALUES(?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET hash=excluded.hash,size=excluded.size,extension=excluded.extension,indexed_at=excluded.indexed_at').run(file.path, file.hash, file.size, file.extension, now());
+        changed++;
+      }
+      const nowMs = Date.now();
+      if (progress && nowMs - lastReport >= 5_000) { lastReport = nowMs; console.log(`[docgen] index RUNNING | ${index + 1}/${inventory.files.length} | changed ${changed} | unchanged ${unchanged} | extracted facts ${factCount.toLocaleString()}`); }
     }
     for (const rel of known.keys()) if (!current.has(rel)) { replaceFacts(db, rel, []); db.prepare('DELETE FROM files WHERE path=?').run(rel); changed++; }
     db.prepare("INSERT INTO metadata(key,value) VALUES('inventory_fingerprint',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(inventory.fingerprint);
@@ -97,6 +104,7 @@ export function indexRepository(root, { force = false } = {}) {
   } catch (error) { db.exec('ROLLBACK'); db.close(); throw error; }
   const totals = { files: db.prepare('SELECT COUNT(*) n FROM files').get().n, facts: db.prepare('SELECT COUNT(*) n FROM facts').get().n };
   db.close();
+  if (progress) console.log(`[docgen] index COMPLETED | changed ${changed} | unchanged ${unchanged} | facts ${totals.facts.toLocaleString()} | elapsed ${Math.max(0, Math.round((Date.now() - started) / 1000))}s`);
   return { schemaVersion: '2.0', indexedAt: now(), inventoryFingerprint: inventory.fingerprint, changedFiles: changed, unchangedFiles: unchanged, extractedFacts: factCount, totals };
 }
 

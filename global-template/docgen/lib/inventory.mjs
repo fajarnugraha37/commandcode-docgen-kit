@@ -61,7 +61,7 @@ function candidatePaths(root) {
   if (!insideGit) return { paths: walk(root), insideGit: false };
   const result = spawnSync('git', ['-C', root, 'ls-files', '-co', '--exclude-standard', '-z'], { encoding: 'buffer', stdio: ['ignore', 'pipe', 'ignore'] });
   if (result.status !== 0) return { paths: walk(root), insideGit: false };
-  return { paths: result.stdout.toString('utf8').split('\0').filter(Boolean).map(posix).sort(), insideGit: true };
+  return { paths: result.stdout.toString('utf8').split('\0').filter(Bolean.bind(Boolean)).map(posix).sort(), insideGit: true };
 }
 
 function binaryMagic(buffer) {
@@ -80,7 +80,7 @@ export function classifyFile(root, rel, config = loadConfig(root)) {
   const probeBytes = Math.max(512, Number(binary.probeBytes ?? 16384)); const fd = fs.openSync(full, 'r'); const buffer = Buffer.alloc(Math.min(stat.size, probeBytes));
   try { fs.readSync(fd, buffer, 0, buffer.length, 0); } finally { fs.closeSync(fd); }
   if (binaryMagic(buffer)) return { included: false, reason: 'binary-magic', size: stat.size };
-  if (buffer.includes(0)) return { included: false, reason: 'nul-byte', size: stat.size };
+  if (buffer.includes(0)) return { included: false, reason: 'null-byte', size: stat.size };
   const text = buffer.toString('utf8'); if (text.includes('\uFFFD')) return { included: false, reason: 'invalid-utf8', size: stat.size };
   const controls = [...buffer].filter((b) => b < 32 && ![9,10,13].includes(b)).length;
   if (buffer.length && controls / buffer.length > Number(binary.controlCharacterRatio ?? 0.08)) return { included: false, reason: 'control-characters', size: stat.size };
@@ -90,17 +90,24 @@ export function classifyFile(root, rel, config = loadConfig(root)) {
 export function buildInventory(root) {
   ruleCache.clear();
   const paths = projectPaths(root); const config = loadConfig(root); const candidates = candidatePaths(root); const docgenRules = loadRules(path.join(root, '.docgenignore')); const included = []; const excluded = [];
-  for (const rel of candidates.paths) {
-    const top = rel.split('/')[0];
-    if (HARD_DIRS.has(top)) { excluded.push({ path: rel, reason: 'hard-exclusion' }); continue; }
-    if (!candidates.insideGit && config.ignore?.useGitignore !== false && ignoredByFallbackGitignore(root, rel)) { excluded.push({ path: rel, reason: '.gitignore' }); continue; }
-    if (config.ignore?.useDocgenignore !== false && ignoredByRules(rel, docgenRules)) { excluded.push({ path: rel, reason: '.docgenignore' }); continue; }
-    const result = classifyFile(root, rel, config);
-    if (!result.included) { excluded.push({ path: rel, reason: result.reason, size: result.size ?? 0 }); continue; }
-    const content = fs.readFileSync(path.join(root, rel)); included.push({ path: rel, size: result.size, extension: result.extension, hash: sha256(content) });
+  const progress = config.execution?.progress !== false && process.env.DOCGEN_PROGRESS !== '0'; const started = Date.now(); let lastReport = started;
+  if (progress) console.log(`[docgen] inventory RUNNING | ${candidates.paths.length.toLocaleString()} candidate files | ${candidates.insideGit ? 'git-aware' : 'filesystem fallback'}`);
+  for (let index = 0; index < candidates.paths.length; index++) {
+    const rel = candidates.paths[index]; const top = rel.split('/')[0];
+    if (HARD_DIRS.has(top)) excluded.push({ path: rel, reason: 'hard-exclusion' });
+    else if (!candidates.insideGit && config.ignore?.useGitignore !== false && ignoredByFallbackGitignore(root, rel)) excluded.push({ path: rel, reason: '.gitignore' });
+    else if (config.ignore?.useDocgenignore !== false && ignoredByRules(rel, docgenRules)) excluded.push({ path: rel, reason: '.docgenignore' });
+    else {
+      const result = classifyFile(root, rel, config);
+      if (!result.included) excluded.push({ path: rel, reason: result.reason, size: result.size ?? 0 });
+      else { const content = fs.readFileSync(path.join(root, rel)); included.push({ path: rel, size: result.size, extension: result.extension, hash: sha256(content) }); }
+    }
+    const nowMs = Date.now();
+    if (progress && nowMs - lastReport >= 5_000) { lastReport = nowMs; console.log(`[docgen] inventory RUNNING | ${index + 1}/${candidates.paths.length} | included ${included.length} | excluded ${excluded.length}`); }
   }
   const inventory = { schemaVersion: '2.0', generatedAt: now(), files: included, excluded, metrics: { includedFiles: included.length, includedBytes: included.reduce((n, x) => n + x.size, 0), excludedFiles: excluded.length }, fingerprint: sha256(included.map((x) => `${x.path}\0${x.hash}`).join('\n')) };
   ensureDir(path.dirname(paths.inventory)); writeJson(paths.inventory, inventory);
   fs.writeFileSync(path.join(path.dirname(paths.inventory), 'source-files.txt'), included.map((x) => x.path).join('\n') + (included.length ? '\n' : ''));
+  if (progress) console.log(`[docgen] inventory COMPLETED | included ${included.length.toLocaleString()} | excluded ${excluded.length.toLocaleString()} | elapsed ${Math.max(0, Math.round((Date.now() - started) / 1000))}s`);
   return inventory;
 }

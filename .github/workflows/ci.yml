@@ -10,10 +10,20 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        node-version: [22, 24]
+        include:
+          - os: ubuntu-latest
+            node-version: 22
+            upload-source: false
+          - os: ubuntu-latest
+            node-version: 24
+            upload-source: true
+          - os: windows-latest
+            node-version: 24
+            upload-source: false
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,7 +40,7 @@ jobs:
       - name: Installer dry run
         run: node install.mjs --dry-run --no-link-cli
       - name: Upload exact CI source
-        if: always() && matrix.node-version == 24
+        if: always() && matrix.upload-source
         uses: actions/upload-artifact@v4
         with:
           name: docgen-ci-source

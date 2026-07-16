@@ -45,7 +45,18 @@
   "execution": {
     "generationBatchSize": 4,
     "maxPlannedPages": 30,
-    "resumeByContentHash": true
+    "resumeByContentHash": true,
+    "heartbeatSeconds": 10,
+    "silenceNoticeSeconds": 45,
+    "streamProviderOutput": false,
+    "stageTimeoutMinutes": {
+      "default": 20,
+      "modelCore": 30,
+      "modelEnterprise": 30,
+      "plan": 20,
+      "generate": 25,
+      "audit": 20
+    }
   },
   "audit": {
     "llmEnabled": true,

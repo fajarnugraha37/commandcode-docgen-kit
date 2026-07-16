@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 export const engineHome = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -66,12 +66,101 @@ export function stableJson(value) {
 export function stableHash(value) { return sha256(JSON.stringify(stableJson(value))); }
 export function estimateTokens(value) { return Math.ceil(Buffer.byteLength(String(value), 'utf8') / 3.6); }
 export function slug(value) { return String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'item'; }
-export function commandExists(command) {
-  const executable = process.platform === 'win32' ? 'where' : 'which';
-  return spawnSync(executable, [command], { stdio: 'ignore', shell: process.platform === 'win32' }).status === 0;
+
+function directCommand(command) {
+  if (!command) return null;
+  const value = String(command);
+  if (path.isAbsolute(value) || value.includes('/') || value.includes('\\')) {
+    const full = path.resolve(value);
+    return fs.existsSync(full) ? full : null;
+  }
+  return null;
 }
+
+export function resolveCommand(command) {
+  const direct = directCommand(command);
+  if (direct) return direct;
+  const locator = process.platform === 'win32'
+    ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'where.exe')
+    : 'which';
+  const result = spawnSync(locator, [String(command)], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    shell: false,
+    windowsHide: true
+  });
+  if (result.status !== 0) return null;
+  const candidates = String(result.stdout ?? '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!candidates.length) return null;
+  if (process.platform !== 'win32') return candidates[0];
+  return candidates.find((item) => /\.(?:exe|com)$/i.test(item))
+    ?? candidates.find((item) => /\.(?:cmd|bat)$/i.test(item))
+    ?? candidates.find((item) => fs.existsSync(item))
+    ?? null;
+}
+
+export function commandExists(command) { return Boolean(resolveCommand(command)); }
+
+function powershellHost() {
+  return resolveCommand('pwsh.exe') ?? resolveCommand('powershell.exe');
+}
+
+export function spawnCommand(command, args = [], options = {}) {
+  const resolved = resolveCommand(command) ?? String(command);
+  const baseOptions = { ...options, shell: false };
+  if (process.platform !== 'win32' || !/\.(?:cmd|bat)$/i.test(resolved)) {
+    return spawn(resolved, args.map(String), baseOptions);
+  }
+  const host = powershellHost();
+  if (!host) throw new Error(`Cannot safely launch Windows command shim: ${resolved}. PowerShell was not found.`);
+  const encodedArgs = Buffer.from(JSON.stringify(args.map(String)), 'utf8').toString('base64');
+  const env = {
+    ...(options.env ?? process.env),
+    DOCGEN_CHILD_EXECUTABLE: resolved,
+    DOCGEN_CHILD_ARGS_B64: encodedArgs
+  };
+  const script = [
+    "$ErrorActionPreference='Stop'",
+    '$exe=$env:DOCGEN_CHILD_EXECUTABLE',
+    '$json=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:DOCGEN_CHILD_ARGS_B64))',
+    '$childArgs=@(ConvertFrom-Json -InputObject $json)',
+    '& $exe @childArgs',
+    'if ($null -eq $LASTEXITCODE) { exit 0 } else { exit $LASTEXITCODE }'
+  ].join('; ');
+  return spawn(host, ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+    ...baseOptions,
+    env
+  });
+}
+
+export function terminateProcessTree(child) {
+  if (!child?.pid) return;
+  if (process.platform === 'win32') {
+    const taskkill = resolveCommand('taskkill.exe') ?? 'taskkill.exe';
+    spawnSync(taskkill, ['/PID', String(child.pid), '/T', '/F'], {
+      stdio: 'ignore',
+      shell: false,
+      windowsHide: true
+    });
+    return;
+  }
+  try { child.kill('SIGTERM'); } catch {}
+  const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 5_000);
+  timer.unref?.();
+}
+
+export function formatDuration(milliseconds) {
+  const seconds = Math.max(0, Math.floor(Number(milliseconds) / 1000));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remaining = seconds % 60;
+  return hours ? `${hours}h ${String(minutes).padStart(2, '0')}m ${String(remaining).padStart(2, '0')}s`
+    : `${minutes}m ${String(remaining).padStart(2, '0')}s`;
+}
+
 export function git(root, args, fallback = null) {
-  const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  const executable = resolveCommand('git') ?? 'git';
+  const result = spawnSync(executable, ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], shell: false });
   return result.status === 0 ? result.stdout.trim() : fallback;
 }
 export function sourceSnapshot(root) {
