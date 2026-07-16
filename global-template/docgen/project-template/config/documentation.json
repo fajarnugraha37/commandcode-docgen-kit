@@ -56,13 +56,19 @@
       "plan": 20,
       "generate": 25,
       "audit": 20
-    }
+    },
+    "generationRecoveryAttempts": 3,
+    "recoverValidArtifacts": true
   },
   "audit": {
     "llmEnabled": true,
     "llmRiskThreshold": 50,
     "failOnCritical": true,
-    "failOnHigh": true
+    "failOnHigh": true,
+    "failOnWarnings": false,
+    "requireLineEvidenceForFacts": true,
+    "requireContextBoundEvidence": true,
+    "minModelReferenceCoverage": 0
   },
   "retry": {
     "maxAttempts": 3,

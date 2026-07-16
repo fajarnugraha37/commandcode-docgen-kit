@@ -25,15 +25,20 @@ const write = (rel, value) => {
   fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n');
 };
 
+if (process.env.DOCGEN_TEST_FAIL_BEFORE_WRITE_STAGE === stage) {
+  console.error(`simulated provider failure before writing ${stage} artifacts`);
+  process.exit(8);
+}
+
 if (stage === 'modelCore') {
   write(target, {
     system: {
-      components: [{ id: 'resource', kind: 'component', name: 'Resource', statement: 'HTTP resource', classification: 'FACT', confidence: 1, evidence: [{ path: 'src/Resource.java', startLine: 1 }] }],
+      components: [{ id: 'resource', kind: 'component', name: 'Resource', statement: 'Source component', classification: 'FACT', confidence: 1, evidence: [{ path: 'src/Resource.java', startLine: 1 }] }],
       relationships: [], workflows: [], unknowns: []
     },
     business: { actors: [], capabilities: [], concepts: [], businessRules: [], decisions: [], branchConditions: [], lifecycles: [], invariants: [], useCases: [], unknowns: [] },
     flows: { businessFlows: [], controlFlows: [], requestFlows: [], trafficFlows: [], dataFlows: [], eventFlows: [] },
-    catalogs: { endpoints: [], messageHandlers: [], externalDependencies: [], dataStores: [], scheduledJobs: [] }
+    catalogs: { interfaces: [], contracts: [], endpoints: [], messageHandlers: [], dependencies: [], externalDependencies: [], dataAssets: [], dataStores: [], automations: [], scheduledJobs: [], buildArtifacts: [], configurationSurfaces: [] }
   });
 } else if (stage === 'modelEnterprise') {
   write(target, {
@@ -42,18 +47,25 @@ if (stage === 'modelCore') {
     'change-impact': { unknowns: [] }, ownership: { unknowns: [] }
   });
 } else if (stage === 'plan') {
+  const pageCount = Math.max(1, Number(process.env.DOCGEN_TEST_PAGE_COUNT || 1));
   write(target, {
     schemaVersion: '2.0', metadata: { description: 'Fixture docs' },
-    pages: [{
-      id: 'overview', title: 'System Overview', summary: 'Fixture overview.', category: 'orientation',
-      mode: 'explanation', type: 'overview', order: 1, audience: ['engineer'], coverageTags: ['architecture'],
-      query: 'resource architecture', requiredSections: [], risk: 'low', relatedPages: []
-    }]
+    pages: Array.from({ length: pageCount }, (_, index) => ({
+      id: index === 0 ? 'overview' : `detail-${index + 1}`,
+      title: index === 0 ? 'System Overview' : `System Detail ${index + 1}`,
+      summary: index === 0 ? 'Fixture overview.' : `Fixture detail ${index + 1}.`,
+      category: 'orientation', mode: 'explanation', type: 'overview', order: index + 1,
+      audience: ['engineer'], coverageTags: ['architecture'], query: 'resource architecture',
+      requiredSections: [], risk: 'low', relatedPages: []
+    }))
   });
 } else if (stage === 'generate') {
   const json = between(prompt, 'Page contracts:\n', '\n\nFor every contract:');
   const contracts = JSON.parse(json);
-  for (const contract of contracts) {
+  const partialMarker = path.join(cwd, '.docgen', 'test-partial-generate.marker');
+  const partialFirstAttempt = process.env.DOCGEN_TEST_PARTIAL_GENERATE === '1' && !fs.existsSync(partialMarker);
+  const selected = partialFirstAttempt ? contracts.slice(0, 1) : contracts;
+  for (const contract of selected) {
     const page = contract.page;
     const md = `---
 title: ${JSON.stringify(page.title)}
@@ -68,7 +80,7 @@ order: ${page.order}
 
 ${page.summary}
 
-The repository exposes an HTTP resource.
+The repository contains a source component.
 `;
     const output = path.join(cwd, contract.outputPath);
     fs.mkdirSync(path.dirname(output), { recursive: true });
@@ -77,10 +89,15 @@ The repository exposes an HTTP resource.
       schemaVersion: '2.0', pageId: page.id, pagePath: contract.outputPath,
       claims: [{
         id: `${page.id}:resource`, section: page.title,
-        statement: 'The repository exposes an HTTP resource.', classification: 'FACT', confidence: 1,
+        statement: 'The repository contains a source component.', classification: 'FACT', confidence: 1,
         evidence: [{ path: 'src/Resource.java', startLine: 1 }], sourceModelRefs: ['system:resource']
       }]
     });
+  }
+  if (partialFirstAttempt) {
+    fs.writeFileSync(partialMarker, 'partial\n');
+    console.error('simulated provider exit after partial valid generation');
+    process.exit(8);
   }
 } else if (stage === 'audit') {
   const output = between(prompt, `report: ${tick}`, tick) || '.docgen/audit/llm-risk.json';
@@ -88,4 +105,10 @@ The repository exposes an HTTP resource.
 } else {
   console.error(`unexpected stage ${stage}`);
   process.exitCode = 2;
+}
+
+
+if (process.env.DOCGEN_TEST_EXIT_AFTER_WRITE_STAGE === stage) {
+  console.error(`simulated provider exit after valid ${stage} artifacts`);
+  process.exit(8);
 }

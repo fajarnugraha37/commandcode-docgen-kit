@@ -1,134 +1,45 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "docgen:traceability:1.0",
+  "$id": "docgen:traceability:2.0",
   "type": "object",
-  "required": [
-    "schemaVersion",
-    "generatedAt",
-    "pageId",
-    "pagePath",
-    "pageHash",
-    "inputHash",
-    "sourceSnapshot",
-    "claims",
-    "coverage",
-    "unknowns",
-    "legacyUnmapped"
-  ],
+  "required": ["schemaVersion", "pageId", "pagePath", "pageHash", "inputHash", "claims"],
   "properties": {
-    "schemaVersion": {
-      "const": "1.0"
-    },
-    "generatedAt": {
-      "type": "string"
-    },
-    "pageId": {
-      "type": "string"
-    },
-    "pagePath": {
-      "type": "string",
-      "pattern": "^docs/.+\\.md$"
-    },
-    "pageHash": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "inputHash": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "sourceSnapshot": {
-      "type": "object",
-      "required": [
-        "capturedAt",
-        "commit",
-        "branch",
-        "dirty",
-        "sourceFingerprint"
-      ],
-      "properties": {
-        "capturedAt": {
-          "type": "string"
-        },
-        "commit": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "branch": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "dirty": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "sourceFingerprint": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      }
-    },
+    "schemaVersion": { "const": "2.0" },
+    "generatedAt": { "type": "string" },
+    "pageId": { "type": "string", "minLength": 1 },
+    "pagePath": { "type": "string", "pattern": "^docs/.+\\.md$" },
+    "pageHash": { "type": "string", "minLength": 1 },
+    "inputHash": { "type": "string", "minLength": 1 },
+    "contextId": { "type": ["string", "null"] },
     "claims": {
       "type": "array",
       "items": {
-        "$ref": "semantic-item.schema.json#/$defs/claim"
-      }
-    },
-    "coverage": {
-      "type": "object",
-      "required": [
-        "evidenceRefsUsed",
-        "modelItemRefs",
-        "catalogItemRefs",
-        "branchItemRefs"
-      ],
-      "properties": {
-        "evidenceRefsUsed": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+        "type": "object",
+        "required": ["id", "section", "statement", "classification", "confidence", "evidence", "sourceModelRefs"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "section": { "type": "string" },
+          "statement": { "type": "string", "minLength": 1 },
+          "classification": { "enum": ["FACT", "INFERENCE", "ASSUMPTION", "UNKNOWN"] },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["path"],
+              "properties": {
+                "path": { "type": "string", "minLength": 1 },
+                "startLine": { "type": "integer", "minimum": 1 },
+                "endLine": { "type": "integer", "minimum": 1 }
+              },
+              "additionalProperties": true
+            }
+          },
+          "sourceModelRefs": { "type": "array", "items": { "type": "string" } }
         },
-        "modelItemRefs": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "catalogItemRefs": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "branchItemRefs": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
+        "additionalProperties": true
       }
-    },
-    "unknowns": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "legacyUnmapped": {
-      "type": "boolean"
     }
-  }
+  },
+  "additionalProperties": true
 }

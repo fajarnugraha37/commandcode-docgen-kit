@@ -11,6 +11,6 @@
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "check": "node --check bin/docgen-launcher.mjs && node --check bin/docgen-v2.mjs && node --check bin/workspace.mjs && node --check lib/core.mjs && node --check lib/inventory.mjs && node --check lib/indexer.mjs && node --check lib/context.mjs && node --check lib/provider.mjs && node --check lib/pipeline.mjs && node --check test/fixtures/fake-provider.mjs && node --check test/semantic-index.test.mjs"
+    "check": "node --check bin/docgen-launcher.mjs && node --check bin/docgen-v2.mjs && node --check bin/workspace.mjs && node --check lib/core.mjs && node --check lib/inventory.mjs && node --check lib/indexer.mjs && node --check lib/context.mjs && node --check lib/provider.mjs && node --check lib/quality.mjs && node --check lib/pipeline.mjs && node --check test/fixtures/fake-provider.mjs && node --check test/semantic-index.test.mjs"
   }
 }

@@ -4,10 +4,10 @@ import { estimateTokens, loadConfig, now, projectPaths, sha256, stableHash, writ
 import { openDatabase } from './indexer.mjs';
 
 const STAGE_QUERIES = {
-  modelCore: 'architecture component workflow endpoint message business rule lifecycle request data event dependency persistence',
-  modelEnterprise: 'security authorization operation observability failure recovery testing configuration ownership decision transaction consistency change impact',
-  plan: 'architecture business rule lifecycle flow endpoint message security operation testing configuration ownership decision change impact',
-  audit: 'fact evidence rule branch failure security transaction contract'
+  modelCore: 'repository structure architecture component module package symbol interface contract dependency behavior domain rule state lifecycle control flow data flow event automation runtime build deployment',
+  modelEnterprise: 'security trust identity permission secret operation observability failure recovery testing configuration ownership decision governance consistency concurrency idempotency compatibility change impact',
+  plan: 'architecture behavior domain interface dependency data security operation testing configuration ownership decision onboarding reference tutorial runbook change impact',
+  audit: 'fact evidence inference assumption unknown claim contradiction branch failure security consistency compatibility contract'
 };
 const CORE_MODELS = ['system', 'business', 'flows', 'catalogs'];
 

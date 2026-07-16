@@ -7,19 +7,24 @@ The context pack is already selected, deduplicated, and bounded by the orchestra
 Write exactly one JSON file: `{{OUTPUT_PATH}}`.
 It must contain these top-level model objects: {{MODEL_NAMES}}.
 
-Required principles:
-- preserve repository-relative evidence paths and line numbers from the context pack;
-- classify every semantic item as FACT, INFERENCE, or UNKNOWN;
+Repository-neutral rules:
+- detect languages, frameworks, libraries, runtimes, protocols, storage, messaging, build systems, and deployment models only when the supplied evidence supports them;
+- never assume HTTP, SQL, a message broker, a database, microservices, a particular programming language, or a named framework;
+- represent whatever the repository actually contains: applications, libraries, CLIs, jobs, infrastructure, data pipelines, plugins, embedded systems, monoliths, services, packages, or mixed workspaces;
+- preserve repository-relative evidence paths and exact line ranges from the context pack;
+- classify every semantic item as FACT, INFERENCE, ASSUMPTION, or UNKNOWN;
 - FACT requires direct evidence present in the context pack;
-- use stable IDs;
-- keep empty arrays when evidence is absent;
-- never invent endpoints, messages, dependencies, rules, states, flows, or infrastructure;
+- use stable IDs and explicit kinds;
+- keep empty arrays when a concern is not evidenced;
+- never invent interfaces, dependencies, behavior, rules, states, flows, data assets, automations, or infrastructure;
 - do not write Markdown or modify application source.
 
 Core shape:
-- system: components, relationships, workflows, unknowns;
+- system: components, modules, packages, relationships, workflows, runtimes, deploymentUnits, unknowns;
 - business: actors, capabilities, concepts, businessRules, decisions, branchConditions, lifecycles, invariants, useCases, unknowns;
-- flows: businessFlows, controlFlows, requestFlows, trafficFlows, dataFlows, eventFlows;
-- catalogs: endpoints, messageHandlers, externalDependencies, dataStores, scheduledJobs.
+- flows: businessFlows, controlFlows, requestFlows, trafficFlows, dataFlows, eventFlows, executionFlows;
+- catalogs: interfaces, contracts, endpoints, messageHandlers, dependencies, externalDependencies, dataAssets, dataStores, automations, scheduledJobs, buildArtifacts, configurationSurfaces.
+
+The named arrays are a broad vocabulary, not a checklist. Populate only evidenced concerns and use generic arrays such as `interfaces`, `dependencies`, `dataAssets`, and `automations` when technology-specific categories do not fit.
 
 Before completion, parse the JSON you wrote and verify every requested top-level object exists.
