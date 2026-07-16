@@ -1,0 +1,1 @@
+Run `docgen index $ARGUMENTS` in the current repository. Build or incrementally refresh the deterministic SQLite/FTS5 semantic index from the canonical text-source inventory, then report changed files, extracted facts, source chunks, and totals.

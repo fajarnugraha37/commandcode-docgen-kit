@@ -1,71 +1,67 @@
-# `.docgen` workspace
+# `.docgen` workspace — v2
 
-This directory is the explicit machine-readable state of Command Code DocGen Kit.
+This directory stores the machine-readable state of the token-efficient DocGen pipeline.
 
 ## Flow
 
 ```text
-source
-  -> evidence/
-  -> model/
+included text source
+  -> index/inventory.json
+  -> index/semantic.db
+  -> context/** bounded packs
+  -> model/** typed knowledge
   -> plan/manifest.json
-  -> ../docs/**/*.md
-  -> audit/
+  -> ../docs/**/*.md + traceability/pages/*.json
+  -> audit/**
+  -> publish/**
 ```
 
 ## Directories
 
-- `config/` — project documentation policy, glossary, style, and Command Code runtime configuration.
-- `schemas/` — JSON contracts for generated intermediate artifacts.
-- `prompts/` — bounded stage prompts used by the orchestrator.
-- `evidence/` — source-grounded facts and their index.
-- `model/` — components, relationships, workflows, unknowns, and system model.
-- `plan/` — documentation manifest and incremental update plan.
-- `audit/` — per-page findings and aggregate audit index.
-- `runs/` — metadata for each orchestrated Command Code headless invocation.
-- `state/` — pipeline state, fingerprints, and compatibility report.
+- `config/` — runtime, budget, context, ignore, audit, and publishing policy.
+- `index/` — canonical inventory plus SQLite/FTS5 files, facts, source chunks, model items, and context metadata.
+- `context/` — content-addressed bounded inputs supplied to provider runs.
+- `model/` — core and enterprise typed semantic models.
+- `plan/` — the bounded page manifest.
+- `traceability/` — claim-level page sidecars and aggregate index.
+- `audit/` — deterministic checks, selective high-risk LLM audit, and quality summary.
+- `telemetry/` — provider-run JSONL telemetry.
+- `budget/` — current call/token budget report.
+- `runs/` — stdout/stderr logs for provider calls.
+- `publish/` — deterministic navigation and search metadata.
+- `state/` — content-hash stage and page checkpoints.
+- `migration-backup/` — archived v1 artifacts created by `docgen migrate`.
 
-## Most important files
+## Important files
 
 ```text
 config/documentation.json
-config/style-guide.md
-config/glossary.md
-evidence/index.json
-model/system.json
-plan/manifest.json
-audit/index.json
+index/inventory.json
+index/source-files.txt
+index/semantic.db
 state/state.json
-state/fingerprints.json
-state/compatibility.json
+plan/manifest.json
+traceability/index.json
+audit/quality-summary.json
+budget/report.json
+publish/navigation.json
+publish/search-index.json
 ```
 
-Do not treat generated documentation as more authoritative than source evidence. The pipeline intentionally preserves FACT / INFERENCE / UNKNOWN boundaries.
+## Provider boundary
 
+Provider sessions may read only their declared `.docgen/context/**` pack and stage output paths. They may not scan repository source, query SQLite, load broad model directories, inspect unrelated pages, or delegate to installed agents. This boundary is enforced by hooks as well as prompts.
 
-## Core knowledge models
+## Models
 
-In addition to technical architecture, DocGen generates repository-local normalized models for business semantics, distinct flow types, and exhaustive interface/dependency catalogs:
+Core:
 
+- `model/system.json`
 - `model/business.json`
 - `model/flows.json`
 - `model/catalogs.json`
 
-Published diagrams are Mermaid-only.
-
-## P0 trustworthiness artifacts
-
-- `traceability/pages/*.json`: claim-level source mappings per page.
-- `traceability/index.json`: aggregated claims and source snapshot.
-- `traceability/contradictions.json`: conflicting subject/predicate claims.
-- `traceability/duplicates.json`: unintentional repeated claims.
-- `traceability/freshness.json`: page/input/source staleness status.
-- `audit/quality-summary.json`: evidence-centric quality metrics.
-
-
-## P1 enterprise-depth models
-
-The enterprise stage produces repository-local typed models:
+Enterprise:
 
 - `model/security.json`
 - `model/operations.json`
@@ -76,40 +72,35 @@ The enterprise stage produces repository-local typed models:
 - `model/change-impact.json`
 - `model/ownership.json`
 
-These models cover trust boundaries, AuthN/AuthZ, ownership/RACI, operational health and recovery, test strategy, data correctness/governance, environment configuration, architectural rationale, and change blast radius.
+All material items and page claims preserve `FACT`, `INFERENCE`, and `UNKNOWN`. FACT requires evidence from `index/inventory.json`.
 
-## Ignore-aware source inventory
+## Commands
 
-DocGen follows repository `.gitignore` and root `.docgenignore`. The effective included source set is written to:
+```bash
+docgen migrate       # v1 repositories only
+docgen index         # deterministic and incremental
+docgen model         # two bounded synthesis calls
+docgen plan
+docgen generate      # deterministic references + bounded narratives
+docgen audit         # deterministic + selective risk audit
+docgen publish       # no provider call
+docgen budget
+docgen status
+```
 
-- `state/source-inventory.json`
-- `state/source-files.txt`
-- `state/ignore-report.json`
+`docgen all` and `docgen resume` run the full content-hash-resumable flow.
 
-Ignored files are excluded from discovery, fingerprints, change detection, traceability, and FACT evidence. Use `docgen ignore`, `docgen source-list`, and `docgen source-grep` to inspect or search the effective source boundary.
+## Ignore and binary boundary
 
-## v0.9 P2 documentation experience
+`.gitignore`, `.docgenignore`, hard exclusions, binary signatures, invalid UTF-8, NUL bytes, and oversized text are applied before indexing. Use `docgen ignore`, `docgen source-list`, and `docgen source-grep` to inspect the effective source boundary.
 
-Published pages are classified by user intent: `tutorial`, `how-to`, `explanation`, `reference`, `runbook`, `decision-record`, `migration-guide`, or `troubleshooting`. DocGen deterministically produces:
+## Multi-repository workspace
 
-- Markdown frontmatter;
-- `docs/llms.txt` and bounded `docs/llms-full.txt`;
-- `publish/navigation.json` and `publish/search-index.json`;
-- backlinks, aliases/redirects, orphan-page and examples indexes;
-- version, status, deprecation, replacement, and migration metadata.
-
-Run `docgen publish` to rebuild these assets without an LLM call.
-
-## Binary and non-text token boundary
-
-Known images, audio/video, PDFs and office documents, archives, compiled artifacts, fonts, database files, keystores, invalid UTF-8, NUL-containing files, and oversized text are excluded from the canonical source inventory. The exclusion applies to reads, grep, fingerprints, change detection, freshness, and evidence validation. Configure the boundary under `ignore.binary` in `config/documentation.json`.
-
-## Multi-repository P3
-
-This repository can be registered into a parent system workspace with:
+Register this repository into a parent workspace only after its models are current:
 
 ```bash
 docgen workspace add /path/to/this-repository
+docgen workspace all
 ```
 
-P3 consumes this repository's validated `.docgen/model/**`, catalogs, ownership, traceability, source fingerprint, and commit metadata. It does not blindly rescan ignored or binary source files.
+Workspace aggregation consumes validated repository models and hashes; it does not rescan source.

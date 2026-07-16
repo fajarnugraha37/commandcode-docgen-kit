@@ -1,9 +1,16 @@
 {
   "name": "commandcode-docgen-kit",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "bin": {
-    "docgen": "bin/docgen.mjs"
+    "docgen": "bin/docgen-launcher.mjs"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check bin/docgen-launcher.mjs && node --check bin/docgen-v2.mjs && node --check bin/workspace.mjs && node --check lib/core.mjs && node --check lib/inventory.mjs && node --check lib/indexer.mjs && node --check lib/context.mjs && node --check lib/provider.mjs && node --check lib/quality.mjs && node --check lib/pipeline.mjs && node --check test/fixtures/fake-provider.mjs && node --check test/semantic-index.test.mjs"
   }
 }

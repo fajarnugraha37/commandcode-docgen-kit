@@ -1,0 +1,1 @@
+Run `docgen budget $ARGUMENTS`. With no argument, report provider calls, estimated input/output tokens, stage totals, remaining limits, and whether the hard budget is exceeded. Use `reset` only when the user explicitly wants telemetry cleared.

@@ -1,1 +1,1 @@
-Run the globally installed DocGen orchestrator command `docgen generate $1`. Generate exactly the requested manifest page through the bounded orchestrated workflow.
+Run `docgen generate` in the current repository. Render low-risk reference/catalog pages deterministically, compile bounded item-level context packs for narrative pages, batch only pages with compatible context, generate traceability sidecars in the same invocation, and skip pages whose input hash is unchanged.

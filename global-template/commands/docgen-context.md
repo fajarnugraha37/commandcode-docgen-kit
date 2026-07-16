@@ -1,0 +1,1 @@
+Run `docgen context $ARGUMENTS`. Compile one bounded context pack from SQLite/FTS5 for the requested stage/query, then report the output path, estimated tokens, and omitted fact/model-item counts. Do not invoke a provider.

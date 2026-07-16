@@ -1,57 +1,30 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "docgen:quality-summary:1.0",
+  "$id": "docgen:quality-summary:2.0",
   "type": "object",
   "required": [
-    "schemaVersion",
-    "generatedAt",
-    "qualityProfile",
-    "sourceSnapshot",
-    "pages",
-    "localGateFailures",
-    "warningCount",
-    "semanticSummary",
-    "auditSummary"
+    "schemaVersion", "generatedAt", "auditInputHash", "inventoryFingerprint",
+    "manifestHash", "pages", "claims", "evidenceReferences", "modelItems",
+    "referencedModelItems", "modelReferenceCoverage", "deterministicFailures",
+    "deterministicWarnings", "llmAuditedPages", "highRiskFindings", "pass"
   ],
   "properties": {
-    "schemaVersion": {
-      "const": "1.0"
-    },
-    "generatedAt": {
-      "type": "string"
-    },
-    "qualityProfile": {
-      "type": "string"
-    },
-    "sourceSnapshot": {
-      "type": "object"
-    },
-    "pages": {
-      "type": "array"
-    },
-    "localGateFailures": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "warningCount": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "semanticSummary": {
-      "type": "object",
-      "required": [
-        "claims",
-        "grounded",
-        "unsupported",
-        "stale",
-        "claimGroundingRatio",
-        "contradictions",
-        "duplicateGroups",
-        "stalePages"
-      ]
-    },
-    "auditSummary": {
-      "type": "object"
-    }
-  }
+    "schemaVersion": { "const": "2.0" },
+    "generatedAt": { "type": "string" },
+    "auditInputHash": { "type": "string" },
+    "inventoryFingerprint": { "type": ["string", "null"] },
+    "manifestHash": { "type": "string" },
+    "pages": { "type": "integer", "minimum": 0 },
+    "claims": { "type": "integer", "minimum": 0 },
+    "evidenceReferences": { "type": "integer", "minimum": 0 },
+    "modelItems": { "type": "integer", "minimum": 0 },
+    "referencedModelItems": { "type": "integer", "minimum": 0 },
+    "modelReferenceCoverage": { "type": "number", "minimum": 0, "maximum": 1 },
+    "deterministicFailures": { "type": "integer", "minimum": 0 },
+    "deterministicWarnings": { "type": "integer", "minimum": 0 },
+    "llmAuditedPages": { "type": "integer", "minimum": 0 },
+    "highRiskFindings": { "type": "integer", "minimum": 0 },
+    "pass": { "type": "boolean" }
+  },
+  "additionalProperties": true
 }

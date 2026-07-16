@@ -1,99 +1,105 @@
 {
   "name": "commandcode-docgen-kit",
-  "version": "1.0.0",
+  "version": "2.0.0",
+  "releaseType": "breaking-token-efficiency-redesign",
+  "runtime": {
+    "node": ">=22.5.0",
+    "database": "node:sqlite with FTS5",
+    "provider": "Command Code CLI"
+  },
   "defaultInstallationScope": "global",
   "globalComponents": [
-    "agents",
     "skills",
     "commands",
     "hooks",
-    "orchestrator",
-    "prompts",
+    "modular-engine",
+    "bounded-prompts",
     "schemas",
     "project-template"
   ],
   "projectComponents": [
     ".docgen/config",
-    ".docgen/evidence",
+    ".docgen/index",
+    ".docgen/context",
     ".docgen/model",
     ".docgen/plan",
-    ".docgen/audit",
-    ".docgen/state",
-    ".docgen/runs",
     ".docgen/traceability",
+    ".docgen/audit",
+    ".docgen/telemetry",
+    ".docgen/budget",
+    ".docgen/runs",
+    ".docgen/publish",
+    ".docgen/state",
     "docs",
-    ".docgen/quarantine",
-    ".docgenignore",
-    ".docgen/publish"
+    ".docgenignore"
   ],
   "counts": {
-    "agents": 8,
+    "agents": 0,
     "skills": 50,
-    "commands": 21,
+    "commands": 15,
     "schemas": 35,
-    "prompts": 14
+    "providerPrompts": 5
   },
-  "contractFirewall": {
-    "boundaries": 19,
-    "deterministicTests": 21,
-    "transactionalStages": 6,
-    "zeroTokenCommand": "docgen contract-test"
+  "tokenEfficiency": {
+    "singlePassSourceIndex": true,
+    "incrementalFileHashing": true,
+    "sourceChunkIndex": true,
+    "sqliteFts5": true,
+    "boundedContextCompiler": true,
+    "contentAddressedContext": true,
+    "hardProviderBudgets": true,
+    "providerTelemetry": true,
+    "twoModelSynthesisCalls": true,
+    "deterministicReferenceRendering": true,
+    "itemLevelPageInvalidation": true,
+    "selectiveRiskAudit": true,
+    "auditInputCaching": true,
+    "parentAgentDelegation": false,
+    "autoEnrichLoop": false,
+    "autoFixLoop": false,
+    "fullReauditLoop": false,
+    "legacyPipeline": false
   },
-  "p0Trustworthiness": {
+  "trustworthiness": {
     "typedSemanticModels": true,
     "claimLevelTraceability": true,
-    "evidenceCentricQuality": true,
-    "crossPageContradictions": true,
-    "duplicateDetection": true,
-    "sourceFreshness": true,
-    "wordCountGate": "advisory",
-    "zeroTokenCommand": "docgen traceability"
+    "factEvidenceValidation": true,
+    "ignoredEvidenceRejected": true,
+    "contextOnlyReadHook": true,
+    "mermaidOnly": true
   },
-  "p1EnterpriseDepth": {
-    "security": true,
-    "operations": true,
-    "testing": true,
-    "dataGovernance": true,
-    "architectureDecisions": true,
-    "configuration": true,
-    "changeImpact": true,
-    "ownership": true
-  },
-  "ignoreBoundary": {
+  "sourceBoundary": {
     "gitignore": true,
+    "nestedGitignoreFallback": true,
     "docgenignore": true,
-    "readHook": true,
-    "sourceInventory": true,
-    "fingerprintsRespectIgnore": true,
-    "traceabilityRejectsIgnoredEvidence": true,
     "binaryAndNonText": true,
-    "magicAndUtf8Probe": true
+    "magicAndUtf8Probe": true,
+    "oversizedTextGuard": true
   },
-  "p2DocumentationExperience": {
-    "documentModes": true,
+  "publishing": {
     "frontmatter": true,
     "llmsTxt": true,
+    "llmsFullTxt": true,
     "searchIndex": true,
-    "backlinks": true,
-    "aliasesRedirects": true,
-    "versionDeprecationMigration": true,
-    "evidenceDerivedExamples": true
+    "navigationIndex": true
   },
-  "p3SystemOfSystems": {
+  "systemOfSystems": {
     "workspaceRegistry": true,
     "multiRepositoryAggregation": true,
-    "globalDependencyGraph": true,
-    "sharedContractRegistry": true,
-    "domainCapabilityMap": true,
+    "dependencyGraph": true,
+    "contractRegistry": true,
+    "capabilityMap": true,
     "businessJourneys": true,
-    "crossServiceRequestFlows": true,
-    "crossServiceEventFlows": true,
-    "crossRepositoryDataLineage": true,
-    "sharedInfrastructure": true,
-    "ownershipAggregation": true,
-    "crossRepositoryChangeImpact": true,
-    "incrementalWorkspaceRebuild": true,
-    "mermaidOnly": true,
-    "zeroProviderBasePipeline": true
+    "crossServiceFlows": true,
+    "dataLineage": true,
+    "ownership": true,
+    "changeImpact": true,
+    "incrementalWorkspaceRebuild": true
+  },
+  "migration": {
+    "from": "1.x",
+    "command": "docgen migrate",
+    "preserves": ["docs/**", ".docgenignore", "selected runtime/ignore configuration"],
+    "archivesLegacyArtifacts": true
   }
 }

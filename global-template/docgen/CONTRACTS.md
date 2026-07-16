@@ -1,85 +1,120 @@
-# DocGen Contract Firewall
+# DocGen 2 contracts
 
-DocGen treats every LLM-produced artifact as untrusted, uncommitted output until it has passed canonicalization and invariant validation.
+DocGen 2 is a language-, framework-, and architecture-neutral documentation pipeline. It treats provider output as untrusted. Deterministic code owns source eligibility, indexing, retrieval, budgets, checkpoints, artifact validation, low-risk rendering, quality gates, and publishing. Providers receive bounded context packs rather than unrestricted repository access.
 
 ## Boundary matrix
 
-| Stage | Canonical artifact | Canonical arrays/fields |
+| Boundary | Canonical artifact | Owner |
 |---|---|---|
-| discover | `.docgen/evidence/index.json` | `artifacts` |
-| analyze | `.docgen/model/system.json` | `components`, `relationships`, `workflows`, `unknowns` |
-| semantics/business | `.docgen/model/business.json` | `actors`, `capabilities`, `concepts`, `businessRules`, `decisions`, `branchConditions`, `lifecycles`, `invariants`, `useCases`, `unknowns` |
-| semantics/flows | `.docgen/model/flows.json` | `businessFlows`, `controlFlows`, `requestFlows`, `trafficFlows`, `dataFlows`, `eventFlows` |
-| semantics/catalogs | `.docgen/model/catalogs.json` | `endpoints`, `messageHandlers`, `externalDependencies`, `dataStores`, `scheduledJobs` |
-| enterprise/security | `.docgen/model/security.json` | `trustBoundaries`, `principals`, `authenticationFlows`, `authorizationRules`, `permissions`, `serviceIdentities`, `secrets`, `sensitiveData`, `threats`, `controls`, `unknowns` |
-| enterprise/operations | `.docgen/model/operations.json` | runtime, health, observability, SLI/SLO, alerts, capacity, scaling, failures, recovery, backup, deployment, runbooks |
-| enterprise/testing | `.docgen/model/testing.json` | suites, test types, fixtures, test data, environments, commands, gaps, contract tests, failure injection, quality gates |
-| enterprise/data governance | `.docgen/model/data-governance.json` | entities, ownership, sources of truth, classification, retention, transactions, consistency, concurrency, idempotency, reconciliation, lineage, migration, auditability |
-| enterprise/decisions | `.docgen/model/decisions.json` | recorded/inferred decisions, alternatives, trade-offs, constraints, consequences, superseded decisions |
-| enterprise/configuration | `.docgen/model/configuration.json` | settings, environments, flags, secrets, tuning, validation, reload behavior, deprecations |
-| enterprise/change impact | `.docgen/model/change-impact.json` | change surfaces, impact edges, compatibility, extension points, risks, tests, operations and contracts |
-| enterprise/ownership | `.docgen/model/ownership.json` | teams, responsibilities, RACI, component/data/operational ownership, approvals and escalation |
-| plan | `.docgen/plan/manifest.json` | `navigation`, `pages`, canonical `docs/**/*.md` paths |
-| generate/enrich/fix | `docs/**/*.md` | exact manifest target, valid Markdown, Mermaid-only diagrams |
-| page traceability | `.docgen/traceability/pages/<page-id>.json` | typed claims, evidence refs, model/catalog/branch coverage, source snapshot |
-| cross-page consistency | `.docgen/traceability/{index,contradictions,duplicates,freshness}.json` | unique claim IDs, contradiction groups, duplicate groups, freshness |
-| audit | `.docgen/audit/pages/<page-id>.json` | `pageId`, `pagePath`, `pageHash`, `inputHash`, `findings` |
-| update-impact | `.docgen/plan/update-plan.json` | `changedPaths`, `affectedEvidenceScopes`, `affectedModels`, `affectedPageIds`, `rationale` |
-| publishing | `.docgen/publish/*.json`, `docs/llms*.txt`, page frontmatter | mode, aliases, lifecycle/version metadata, search/navigation/backlink/redirect/example indexes |
+| source eligibility | `.docgen/index/inventory.json` | deterministic inventory |
+| searchable knowledge | `.docgen/index/semantic.db` | deterministic indexer |
+| provider input | `.docgen/context/<stage>/*.json` | bounded context compiler |
+| core synthesis | `.docgen/model/{system,business,flows,catalogs}.json` | bounded provider call + orchestrator validation |
+| enterprise synthesis | `.docgen/model/{security,operations,testing,data-governance,decisions,configuration,change-impact,ownership}.json` | bounded provider call + orchestrator validation |
+| page plan | `.docgen/plan/manifest.json` | bounded planner + deterministic canonicalization |
+| generated pages | `docs/**/*.md` | deterministic renderer or bounded writer |
+| page claims | `.docgen/traceability/pages/<page-id>.json` | page generation + deterministic normalization |
+| runtime checkpoints | `.docgen/state/state.json` | orchestrator |
+| structural and grounding audit | `.docgen/audit/deterministic.json` | deterministic auditor |
+| selective semantic-risk audit | `.docgen/audit/llm-risk.json` | hash-cached bounded provider call |
+| quality summary | `.docgen/audit/quality-summary.json` | deterministic aggregator |
+| publishing | `.docgen/publish/*.json`, `docs/llms*.txt` | deterministic publisher |
+| provider usage | `.docgen/telemetry/provider-runs.jsonl`, `.docgen/budget/report.json` | orchestrator |
+| provider diagnostics | `.docgen/runs/*.stdout.log`, `.docgen/runs/*.stderr.log` | orchestrator |
 
-## Invariants
+## Hard invariants
 
-1. **Single canonical representation** — aliases are removed from committed artifacts.
-2. **Idempotence** — normalizing canonical output again cannot change or duplicate it.
-3. **Losslessness for known split aliases** — producers, consumers and listeners are merged into the complete message-handler catalog.
-4. **Path safety** — evidence remains under `.docgen/evidence/**`; published pages remain under `docs/**/*.md`.
-5. **Identity consistency** — audit page ID/path/hash must match the current manifest/page.
-6. **Input consistency** — generated pages and audits are fingerprinted against their declared evidence/model inputs.
-7. **Transactional stages** — partial output is quarantined and the previous valid artifact restored.
-8. **Dependency invalidation** — rerunning an upstream stage invalidates dependent stage skips.
-9. **Typed semantic items** — each model item has stable ID, kind, epistemic classification, confidence, evidence, and source references.
-10. **Direct evidence for FACT** — FACT items and claims cannot commit without resolvable repository evidence.
-11. **Claim-level traceability** — material page claims map to source and normalized semantic/catalog items.
-12. **Cross-page consistency** — claim ID collisions and subject/predicate contradictions fail quality gates.
-13. **Freshness** — page, input, Git/source fingerprint changes make traceability stale.
-14. **Evidence-centric quality** — grounding and coverage are hard gates; word count is advisory.
-15. **Ignore-aware source boundary** — `.gitignore`, `.docgenignore`, hard exclusions, and project `config.exclude` produce one canonical source inventory used by every stage.
-16. **Ignored evidence rejection** — an ignored path cannot support a typed FACT or page claim.
-17. **Enterprise-depth coverage** — security, operations, testing, data governance, decisions, configuration, change impact, and ownership use typed, evidence-backed item contracts.
-18. **Binary/non-text budget boundary** — binary extensions, magic signatures, NUL bytes, invalid UTF-8, excessive control characters, and oversized text are excluded before reads, fingerprints, change detection, or evidence validation.
-19. **Mode-aware documentation** — every planned page has a canonical document mode and mode-specific structural contract.
-20. **Deterministic publishing** — frontmatter, navigation, search, backlinks, redirects, orphan reports, examples indexes, and `llms*.txt` are produced without a provider call.
-21. **Evidence-derived examples** — publishable examples must map to page claims and source/model references; generic unsupported examples do not satisfy the quality contract.
+1. **Technology neutrality** — no language, framework, protocol, datastore, messaging system, deployment model, or repository shape is assumed. Applications, libraries, CLIs, jobs, plugins, infrastructure, data pipelines, embedded systems, monoliths, services, and mixed workspaces are all valid inputs.
+2. **Canonical source boundary** — Git-aware discovery or filesystem fallback, `.gitignore`, `.docgenignore`, binary signatures, UTF-8 checks, and size limits are applied before indexing.
+3. **One index phase per full run** — `docgen all` indexes once, then all later phases consume that inventory and semantic database.
+4. **Context-only provider** — provider work is bounded by declared context packs and explicit output contracts; prompts must not perform broad repository scans.
+5. **Bounded context** — every pack has a token budget and records omitted facts and model items.
+6. **Content addressing** — contexts, stages, pages, traces, audits, and publishing are reusable only while their source, model, input, and artifact hashes remain current.
+7. **Crash-safe page checkpoints** — page state records running, completed, and failed work. A failed generation batch preserves valid pages and retries only missing or invalid pages.
+8. **Fresh-artifact recovery** — a provider non-zero exit may be recovered only when the current invocation produced artifacts that pass the complete output contract. Pre-existing stale artifacts are never accepted as recovery proof.
+9. **Effective provider configuration** — every call records and prints the executable, model, effective `maxTurns`, timeout, context size, and log files. The supported minimum conversation-turn budget is 30.
+10. **Hard provider budget** — a call is refused before execution when configured call, token, or per-call limits would be exceeded.
+11. **Typed semantic claims** — model items and page claims use `FACT`, `INFERENCE`, `ASSUMPTION`, or `UNKNOWN`, with confidence, evidence, and stable qualified identity.
+12. **Grounded facts** — a `FACT` requires repository-relative evidence inside the canonical inventory. By default it also requires valid line evidence whose source hash still matches the index.
+13. **Context-bound generation** — generated claim evidence and model references must come from the page's supplied context unless explicitly disabled.
+14. **Qualified model identity** — references use `<model>:<semantic-id>` to prevent collisions and permit deterministic validation.
+15. **Deterministic references where possible** — generic components, interfaces, dependencies, data assets, automation, configuration, ownership, and change-impact catalogs can be rendered without provider calls.
+16. **Quality before publishing** — publishing requires a current passing audit and revalidates source, model, page, trace, links, evidence, and audit hashes to reject stale output.
+17. **Selective semantic-risk audit** — provider audit is limited to risk-scored pages after deterministic validation and is reused only while its inputs remain unchanged.
+18. **No hidden repair loop** — there is no unbounded enrich/fix/re-audit cycle. Recovery is bounded and checkpointed.
+19. **Mermaid only** — generated diagrams may not depend on PlantUML, Graphviz, or image-only formats.
+20. **Breaking migration boundary** — legacy workflow artifacts are archived rather than interpreted as current checkpoints.
 
-Run the zero-token suite with:
+## Framework-neutral semantic surfaces
 
-```bash
-docgen contract-test
+The shape is extensible. Technology-specific arrays are optional signals, not requirements.
+
+- `system.json`: components, modules, packages, runtimes, deployment units, relationships, workflows, and unknowns.
+- `business.json`: actors, capabilities, concepts, rules, decisions, branches, lifecycles, invariants, use cases, and unknowns.
+- `flows.json`: execution, control, request, traffic, data, event, batch, and other evidenced flows.
+- `catalogs.json`: interfaces, contracts, dependencies, data assets, automations, build artifacts, configuration surfaces, plus optional protocol-specific catalogs when present.
+- enterprise models: security, operations, testing, data governance, decisions, configuration, change impact, and ownership.
+
+The deterministic index always provides generic file artifacts and source chunks. It may additionally recognize common symbols, functions, imports/modules, manifests, configuration keys, runtime declarations, infrastructure resources, interfaces, data entities, scheduled automation, or security boundaries. Absence of a recognizer never makes a technology unsupported because bounded source chunks remain the fallback evidence surface.
+
+## Runtime and resume contract
+
+A full run is:
+
+```text
+index -> modelCore -> modelEnterprise -> plan -> generate -> audit -> publish
 ```
 
-The machine-readable report is written to `.docgen/state/contract-report.json`.
+`docgen resume` runs the same state-aware pipeline. Completed stages and pages are reused only when their input hashes and required outputs remain valid. During generation:
 
-## Trustworthiness reports
+1. each page is marked `running` with batch, context, and input identity;
+2. provider output is validated page-by-page;
+3. valid pages are checkpointed immediately;
+4. failed or missing pages are marked with their error;
+5. bounded recovery retries only the unresolved subset;
+6. a page becomes `completed` only after Markdown and traceability validation succeeds.
 
-Run `docgen traceability` to rebuild deterministic claim, contradiction, duplicate, and freshness reports. Run `docgen quality` to apply semantic thresholds. Neither command requires an LLM call.
+## Correctness gate
 
-# P3 workspace contracts
+The deterministic audit validates, at minimum:
 
-A system workspace is rooted by `.docgen-workspace/workspace.json` and references repositories by stable ID plus absolute path. Repository-local `.docgen/model/**` artifacts remain authoritative for repository facts.
+- source inventory membership, live-source hash, and evidence line ranges;
+- model JSON validity, qualified identities, classifications, confidence, and FACT evidence;
+- page frontmatter, H1, required sections, Mermaid policy, and local links;
+- page/trace identity, page hash, input hash, and generation context identity;
+- claim classification, confidence, evidence, context-bound grounding, and model references;
+- missing, duplicate, conflicting, stale, orphaned, or substantially duplicated artifacts;
+- model-reference coverage and configurable warning/failure policy.
 
-P3 canonical workspace outputs:
+The detailed report is `.docgen/audit/deterministic.json`. `.docgen/audit/quality-summary.json` is the publish gate and contains aggregate claim, evidence, model-reference, failure, warning, and selective-risk metrics.
 
-- `repositories.json`
-- `model/system-map.json`
-- `model/dependency-graph.json`
-- `model/contract-registry.json`
-- `model/capability-map.json`
-- `model/business-journeys.json`
-- `model/request-flows.json`
-- `model/event-flows.json`
-- `model/data-lineage.json`
-- `model/shared-infrastructure.json`
-- `model/ownership.json`
-- `model/change-impact.json`
+## Page traceability
 
-Cross-repository edges require explicit registered repository identity, dependency target, shared producer/consumer channel, or repository model reference. Ambiguous relationships remain unresolved. Workspace publishing is Mermaid-only and deterministic.
+Each page sidecar contains:
+
+```json
+{
+  "schemaVersion": "2.0",
+  "pageId": "component-lifecycle",
+  "pagePath": "docs/architecture/component-lifecycle.md",
+  "pageHash": "...",
+  "inputHash": "...",
+  "contextId": "...",
+  "claims": [
+    {
+      "id": "component-lifecycle:transition",
+      "statement": "The component transitions from pending to active.",
+      "classification": "FACT",
+      "confidence": 1,
+      "evidence": [{"path": "src/component.ext", "startLine": 120, "endLine": 146}],
+      "sourceModelRefs": ["business:transition-pending-active"]
+    }
+  ]
+}
+```
+
+The orchestrator normalizes and verifies page, input, and context hashes after generation.
+
+## Workspace boundary
+
+Cross-repository synthesis remains deterministic and requires explicit repository identity plus evidenced relationships, declared dependencies, shared producer/consumer contracts, or qualified model references. Ambiguous relationships remain unresolved instead of being inferred from a preferred stack.

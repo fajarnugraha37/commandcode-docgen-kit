@@ -1,344 +1,92 @@
 {
-  "schemaVersion": "1.6",
+  "schemaVersion": "2.0",
   "projectName": "",
   "outputRoot": "docs",
-  "discoveryScopes": [
-    "."
-  ],
-  "exclude": [
-    ".git/**",
-    ".idea/**",
-    ".vscode/**",
-    ".commandcode/**",
-    ".docgen/**",
-    "docs/**",
-    "node_modules/**",
-    "target/**",
-    "build/**",
-    "dist/**",
-    "coverage/**",
-    "vendor/**",
-    "**/*.min.js",
-    "**/*.map",
-    "**/*.class",
-    "**/*.jar",
-    "**/*.war",
-    "**/*.zip"
-  ],
-  "sourceExtensions": [
-    ".java",
-    ".kt",
-    ".kts",
-    ".xml",
-    ".sql",
-    ".json",
-    ".yaml",
-    ".yml",
-    ".properties",
-    ".md",
-    ".go",
-    ".rs",
-    ".cs",
-    ".js",
-    ".mjs",
-    ".cjs",
-    ".ts",
-    ".tsx",
-    ".vue",
-    ".proto",
-    ".bpmn",
-    ".dmn",
-    ".sh",
-    ".ps1",
-    ".dockerfile"
-  ],
-  "audiences": [
-    "engineer",
-    "architect",
-    "operator",
-    "product",
-    "business-analyst"
-  ],
-  "pageTypes": [
-    "overview",
-    "architecture",
-    "business",
-    "concept",
-    "flow",
-    "guide",
-    "reference",
-    "data",
-    "integration",
-    "operations",
-    "troubleshooting",
-    "security",
-    "testing",
-    "configuration",
-    "decision",
-    "ownership",
-    "maintenance",
-    "tutorial",
-    "runbook",
-    "migration"
-  ],
-  "requireEvidenceReferences": true,
-  "diagramFormat": "mermaid",
-  "maxDiscoveryScopeHint": "Prefer one module or bounded subsystem per discovery run for large repositories.",
   "commandCode": {
     "executable": "",
     "trust": true,
     "skipOnboarding": true,
     "yolo": true,
+    "verbose": false,
     "model": "",
-    "stageModels": {},
-    "maxTurns": {
-      "default": 20,
-      "discover": 30,
-      "analyze": 30,
-      "plan": 20,
-      "generate": 20,
-      "audit": 20,
-      "fix": 20,
-      "update-impact": 20,
-      "enrich": 20,
-      "semantics": 30,
-      "enterprise": 30
-    }
-  },
-  "quality": {
-    "profile": "comprehensive",
-    "autoEnrich": true,
-    "autoFix": true,
-    "reAuditAfterFix": true,
-    "minWordsByType": {
-      "overview": 900,
-      "architecture": 1200,
-      "concept": 900,
-      "guide": 1000,
-      "reference": 700,
-      "operations": 1000,
-      "business": 1000,
-      "flow": 1000,
-      "data": 1000,
-      "integration": 900,
-      "troubleshooting": 1000
+    "stageModels": {
+      "modelCore": "",
+      "modelEnterprise": "",
+      "plan": "",
+      "generate": "",
+      "audit": ""
     },
-    "minHeadings": 4,
-    "requireDeclaredSections": true,
-    "requirePlannedDiagrams": true,
-    "maxCriticalFindings": 0,
-    "maxHighFindings": 0,
-    "requireMermaidOnly": true,
-    "requireCoverageTags": true,
-    "requiredCoverageTagsWhenEvidenceExists": [
-      "business-rules",
-      "branch-conditions",
-      "request-flow",
-      "traffic-flow",
-      "data-flow",
-      "endpoint-catalog",
-      "message-handler-catalog",
-      "external-dependency-catalog",
-      "security-trust-boundaries",
-      "authorization-model",
-      "data-governance",
-      "consistency-transactions",
-      "operations-observability",
-      "failure-recovery",
-      "testing-strategy",
-      "configuration-matrix",
-      "architecture-decisions",
-      "change-impact",
-      "ownership-responsibilities"
-    ],
-    "enrichmentMode": "on-failure",
-    "wordCountGate": "advisory",
-    "semanticMetrics": {
-      "minClaimGroundingRatio": 0.9,
-      "minEvidenceCoverageRatio": 0.8,
-      "minCatalogCoverageRatio": 1.0,
-      "minBranchCoverageRatio": 0.9,
-      "minEvidenceClaimsPer1000Words": 1.5,
-      "maxUnsupportedClaims": 0,
-      "maxContradictions": 0,
-      "maxStalePages": 0,
-      "duplicateClaimsAsWarning": true,
-      "minModelCoverageRatio": 0.9,
-      "evidenceClaimDensityGate": "hard",
-      "minStructuredClaimRatio": 0.7,
-      "maxClaimIdCollisions": 0
+    "maxTurns": {
+      "default": 12,
+      "modelCore": 16,
+      "modelEnterprise": 16,
+      "plan": 12,
+      "generate": 12,
+      "audit": 10
     }
   },
-  "progress": {
-    "heartbeatSeconds": 10,
-    "noOutputWarningSeconds": 45,
-    "showCommandOutput": true,
-    "verboseCommandCode": true
+  "budget": {
+    "maxProviderCalls": 24,
+    "maxEstimatedInputTokens": 2500000,
+    "maxEstimatedOutputTokens": 500000,
+    "maxContextTokensPerCall": 80000,
+    "onExceeded": "stop-and-report"
   },
-  "knowledgeBase": {
-    "target": "deep-multi-page-system-knowledge-base",
-    "navigation": "category-and-page hierarchy",
-    "preferFocusedPagesOverCatchAll": true,
-    "exhaustiveCatalogs": true,
-    "flowTypes": [
-      "business",
-      "control",
-      "request",
-      "traffic",
-      "data",
-      "event"
-    ],
-    "diagramFormat": "mermaid-only"
+  "context": {
+    "maxTokens": {
+      "default": 60000,
+      "modelCore": 80000,
+      "modelEnterprise": 80000,
+      "plan": 50000,
+      "generate": 30000,
+      "audit": 18000
+    }
   },
   "execution": {
-    "resumeByDefault": true,
-    "skipValidPages": true,
-    "generateBatchSize": 4,
-    "enrichBatchSize": 4,
-    "auditBatchSize": 6,
-    "failFastPreflight": true,
+    "generationBatchSize": 4,
+    "maxPlannedPages": 30,
+    "resumeByContentHash": true,
+    "heartbeatSeconds": 10,
+    "silenceNoticeSeconds": 45,
+    "streamProviderOutput": false,
     "stageTimeoutMinutes": {
       "default": 20,
-      "discover": 35,
-      "analyze": 35,
-      "semantics": 35,
-      "plan": 25,
-      "generate": 20,
-      "enrich": 15,
-      "audit": 15,
-      "fix": 15,
-      "update-impact": 15,
-      "enterprise": 30
-    },
-    "adoptLegacyValidPages": true
+      "modelCore": 30,
+      "modelEnterprise": 30,
+      "plan": 20,
+      "generate": 25,
+      "audit": 20
+    }
+  },
+  "audit": {
+    "llmEnabled": true,
+    "llmRiskThreshold": 50,
+    "failOnCritical": true,
+    "failOnHigh": true
   },
   "retry": {
-    "enabled": true,
-    "maxAttempts": 4,
-    "retryableExitCodes": [
-      5,
-      6,
-      7
-    ],
+    "maxAttempts": 3,
     "initialDelaySeconds": 15,
-    "rateLimitDelaySeconds": 30,
-    "maxDelaySeconds": 120,
-    "multiplier": 2,
-    "jitterRatio": 0.2,
-    "countdownSeconds": 10,
-    "interRequestDelaySeconds": 3
-  },
-  "enterpriseDepth": {
-    "enabled": true,
-    "passes": [
-      "governance",
-      "operability",
-      "data-and-configuration",
-      "evolution"
-    ],
-    "models": [
-      ".docgen/model/security.json",
-      ".docgen/model/operations.json",
-      ".docgen/model/testing.json",
-      ".docgen/model/data-governance.json",
-      ".docgen/model/decisions.json",
-      ".docgen/model/configuration.json",
-      ".docgen/model/change-impact.json",
-      ".docgen/model/ownership.json"
-    ],
-    "requiredCoverageTagsWhenEvidenceExists": [
-      "security-trust-boundaries",
-      "authorization-model",
-      "data-governance",
-      "consistency-transactions",
-      "operations-observability",
-      "failure-recovery",
-      "testing-strategy",
-      "configuration-matrix",
-      "architecture-decisions",
-      "change-impact",
-      "ownership-responsibilities"
-    ]
+    "maxDelaySeconds": 120
   },
   "ignore": {
     "useGitignore": true,
     "useDocgenignore": true,
-    "docgenignoreFile": ".docgenignore",
-    "writeReport": true,
     "rejectIgnoredEvidence": true,
     "binary": {
       "enabled": true,
       "probeBytes": 16384,
       "maxTextFileBytes": 4194304,
       "controlCharacterRatio": 0.08,
-      "allowExtensions": [],
       "denyExtensions": []
     }
   },
-  "documentationExperience": {
-    "enabled": true,
-    "modes": [
-      "tutorial",
-      "how-to",
-      "explanation",
-      "reference",
-      "runbook",
-      "decision-record",
-      "migration-guide",
-      "troubleshooting"
-    ],
-    "requireMode": true,
-    "generateFrontmatter": true,
-    "generateLlmsTxt": true,
-    "generateLlmsFull": true,
-    "llmsFullMaxBytes": 5242880,
-    "generateSearchIndex": true,
-    "generateBacklinks": true,
-    "generateRedirects": true,
-    "generateExamplesIndex": true,
-    "requireEvidenceDerivedExamples": true,
-    "versioning": true,
-    "deprecationMetadata": true,
-    "adoptPreP2Pages": true,
-    "enforceModeSections": true,
-    "modeRequiredSections": {
-      "tutorial": [
-        "Prerequisites",
-        "Walkthrough",
-        "Next Steps"
-      ],
-      "how-to": [
-        "Prerequisites",
-        "Steps",
-        "Verification"
-      ],
-      "explanation": [],
-      "reference": [],
-      "runbook": [
-        "Symptoms",
-        "Diagnosis",
-        "Procedure",
-        "Verification",
-        "Escalation"
-      ],
-      "decision-record": [
-        "Context",
-        "Decision",
-        "Alternatives",
-        "Consequences"
-      ],
-      "migration-guide": [
-        "Prerequisites",
-        "Migration Steps",
-        "Verification",
-        "Rollback"
-      ],
-      "troubleshooting": [
-        "Symptoms",
-        "Diagnosis",
-        "Resolution",
-        "Verification"
-      ]
-    }
+  "publishing": {
+    "frontmatter": true,
+    "llmsTxt": true,
+    "llmsFullTxt": true,
+    "searchIndex": true,
+    "navigationIndex": true,
+    "mermaidOnly": true
   }
 }
