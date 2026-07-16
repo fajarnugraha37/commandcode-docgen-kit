@@ -9,7 +9,7 @@ if (!Number.isFinite(maxTurns) || maxTurns < 30) {
   process.exit(8);
 }
 
-const prompt = fs.readFileSync(0, 'utf8');
+const prompt = fs.readFileSync(0, 'utf8').replace(/\r\n?/g, '\n');
 const stage = process.env.DOCGEN_STAGE;
 const cwd = process.cwd();
 const tick = String.fromCharCode(96);
