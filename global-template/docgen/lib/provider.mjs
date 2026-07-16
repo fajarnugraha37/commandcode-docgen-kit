@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { appendJsonl, commandExists, ensureDir, estimateTokens, loadConfig, now, projectPaths, readJson, sha256, sleep, writeJson } from './core.mjs';
+import { appendJsonl, commandExists, ensureDir, estimateTokens, loadConfig, now, projectPaths, sha256, sleep, writeJson } from './core.mjs';
 
 function executable(config) {
   if (process.env.DOCGEN_COMMAND_CODE_BIN) return process.env.DOCGEN_COMMAND_CODE_BIN;
@@ -38,16 +38,27 @@ export function telemetry(root) {
   return fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
 }
 
+function completedRuns(root) {
+  const terminal = new Map();
+  for (const record of telemetry(root)) if (record.status === 'completed' || record.status === 'failed') terminal.set(record.runId, record);
+  return [...terminal.values()];
+}
+
 export function budgetReport(root) {
-  const paths = projectPaths(root); const config = loadConfig(root); const limits = budgetConfig(config); const runs = telemetry(root);
+  const paths = projectPaths(root); const limits = budgetConfig(loadConfig(root)); const runs = completedRuns(root);
   const usage = {
-    providerCalls: runs.filter((x) => x.status === 'completed' || x.status === 'failed').length,
+    providerCalls: runs.length,
     estimatedInputTokens: runs.reduce((n, x) => n + Number(x.estimatedInputTokens ?? 0), 0),
     estimatedOutputTokens: runs.reduce((n, x) => n + Number(x.estimatedOutputTokens ?? 0), 0),
     cacheHits: runs.filter((x) => x.cacheHit).length
   };
   const remaining = { providerCalls: limits.maxProviderCalls - usage.providerCalls, estimatedInputTokens: limits.maxEstimatedInputTokens - usage.estimatedInputTokens, estimatedOutputTokens: limits.maxEstimatedOutputTokens - usage.estimatedOutputTokens };
-  const report = { schemaVersion: '2.0', generatedAt: now(), limits, usage, remaining, exceeded: Object.values(remaining).some((x) => x < 0), stages: Object.fromEntries([...new Set(runs.map((x) => x.stage))].map((stage) => [stage, { calls: runs.filter((x) => x.stage === stage).length, inputTokens: runs.filter((x) => x.stage === stage).reduce((n, x) => n + Number(x.estimatedInputTokens ?? 0), 0), outputTokens: runs.filter((x) => x.stage === stage).reduce((n, x) => n + Number(x.estimatedOutputTokens ?? 0), 0) }])) };
+  const stages = {};
+  for (const run of runs) {
+    const stage = stages[run.stage] ??= { calls: 0, inputTokens: 0, outputTokens: 0 };
+    stage.calls++; stage.inputTokens += Number(run.estimatedInputTokens ?? 0); stage.outputTokens += Number(run.estimatedOutputTokens ?? 0);
+  }
+  const report = { schemaVersion: '2.0', generatedAt: now(), limits, usage, remaining, exceeded: Object.values(remaining).some((x) => x < 0), stages };
   writeJson(paths.budget, report); return report;
 }
 
@@ -66,10 +77,14 @@ function runOnce(root, stage, target, prompt, attempt, maxAttempts) {
   const record = { schemaVersion: '2.0', runId, stage, target: target || null, attempt, maxAttempts, startedAt, estimatedInputTokens: inputTokens, promptHash: sha256(prompt), model: process.env.DOCGEN_MODEL || config.commandCode?.stageModels?.[stage] || config.commandCode?.model || null, status: 'running' };
   appendJsonl(path.join(paths.telemetry, 'provider-runs.jsonl'), record);
   return new Promise((resolve, reject) => {
+    let settled = false;
     const child = spawn(bin, args, { cwd: root, env: { ...process.env, DOCGEN_MODE: '1', DOCGEN_STAGE: stage, DOCGEN_TARGET: target, DOCGEN_CONTEXT_ONLY: '1' }, shell: process.platform === 'win32', stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
-    let stdout = ''; let stderr = ''; child.stdout.on('data', (chunk) => { stdout += chunk; fs.appendFileSync(stdoutFile, chunk); }); child.stderr.on('data', (chunk) => { stderr += chunk; fs.appendFileSync(stderrFile, chunk); });
-    child.on('error', reject);
+    let stdout = ''; let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; fs.appendFileSync(stdoutFile, chunk); });
+    child.stderr.on('data', (chunk) => { stderr += chunk; fs.appendFileSync(stderrFile, chunk); });
+    child.on('error', (error) => { if (!settled) { settled = true; reject(error); } });
     child.on('close', (code) => {
+      if (settled) return; settled = true;
       const completed = { ...record, finishedAt: now(), exitCode: code ?? 1, status: code === 0 ? 'completed' : 'failed', estimatedOutputTokens: estimateTokens(stdout + stderr), stdoutFile: path.relative(root, stdoutFile).replaceAll('\\', '/'), stderrFile: path.relative(root, stderrFile).replaceAll('\\', '/') };
       appendJsonl(path.join(paths.telemetry, 'provider-runs.jsonl'), completed); budgetReport(root);
       if (code === 0) resolve(completed); else reject(Object.assign(new Error(`${stage}${target ? `:${target}` : ''} failed with exit ${code}. ${stderr.slice(-2000)}`), { exitCode: code ?? 1, stdout, stderr }));
