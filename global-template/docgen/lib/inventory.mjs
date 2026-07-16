@@ -5,6 +5,7 @@ import { ensureDir, git, loadConfig, now, posix, projectPaths, sha256, writeJson
 
 const HARD_DIRS = new Set(['.git', '.docgen', '.commandcode', 'docs', 'node_modules', 'target', 'build', 'dist', 'coverage', 'vendor']);
 const BINARY_EXTENSIONS = new Set(['.png','.jpg','.jpeg','.gif','.webp','.bmp','.ico','.tif','.tiff','.avif','.heic','.psd','.mp3','.wav','.flac','.aac','.ogg','.mp4','.mov','.avi','.mkv','.webm','.pdf','.doc','.docx','.xls','.xlsx','.ppt','.pptx','.zip','.gz','.tgz','.bz2','.xz','.7z','.rar','.tar','.jar','.war','.ear','.class','.dll','.exe','.so','.dylib','.o','.a','.lib','.woff','.woff2','.ttf','.otf','.eot','.bin','.dat','.db','.sqlite','.sqlite3','.p12','.pfx','.jks','.keystore','.apk','.ipa','.iso','.dmg','.img','.wasm','.pyc','.pyo']);
+const ruleCache = new Map();
 
 function globRegex(pattern) {
   let source = posix(pattern.trim()).replace(/^\.\//, '');
@@ -18,18 +19,27 @@ function globRegex(pattern) {
     else if (c === '?') out += '[^/]';
     else out += c.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
   }
-  return new RegExp(anchored ? `^${out}$` : `(?:^|/)${out}$`);
+  return new RegExp(anchored ? `^${out}(?:/.*)?$` : `(?:^|/)${out}(?:/.*)?$`);
 }
 
-function loadDocgenIgnore(root) {
-  const file = path.join(root, '.docgenignore');
-  if (!fs.existsSync(file)) return [];
-  return fs.readFileSync(file, 'utf8').split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith('#')).map((line) => ({ negate: line.startsWith('!'), regex: globRegex(line.replace(/^!/, '')), raw: line }));
+function loadRules(file) {
+  if (ruleCache.has(file)) return ruleCache.get(file);
+  const result = !fs.existsSync(file) ? [] : fs.readFileSync(file, 'utf8').split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith('#')).map((line) => ({ negate: line.startsWith('!'), regex: globRegex(line.replace(/^!/, '')), raw: line }));
+  ruleCache.set(file, result); return result;
 }
 
-function ignoredByDocgen(rel, rules) {
+function ignoredByRules(rel, rules) {
   let ignored = false;
   for (const rule of rules) if (rule.regex.test(rel)) ignored = !rule.negate;
+  return ignored;
+}
+
+function ignoredByFallbackGitignore(root, rel) {
+  const parts = rel.split('/'); let ignored = false;
+  for (let depth = 0; depth < parts.length; depth++) {
+    const base = parts.slice(0, depth).join('/'); const local = parts.slice(depth).join('/');
+    for (const rule of loadRules(path.join(root, base, '.gitignore'))) if (rule.regex.test(local)) ignored = !rule.negate;
+  }
   return ignored;
 }
 
@@ -38,9 +48,6 @@ function walk(root) {
   while (stack.length) {
     const dir = stack.pop();
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name.startsWith('.') && entry.name !== '.env' && entry.name !== '.env.example') {
-        if (entry.isDirectory() || ['.gitignore', '.docgenignore'].includes(entry.name) === false) continue;
-      }
       const full = path.join(dir, entry.name); const rel = posix(path.relative(root, full));
       if (entry.isDirectory()) { if (!HARD_DIRS.has(entry.name)) stack.push(full); }
       else out.push(rel);
@@ -51,10 +58,10 @@ function walk(root) {
 
 function candidatePaths(root) {
   const insideGit = git(root, ['rev-parse', '--is-inside-work-tree']) === 'true';
-  if (!insideGit) return walk(root);
+  if (!insideGit) return { paths: walk(root), insideGit: false };
   const result = spawnSync('git', ['-C', root, 'ls-files', '-co', '--exclude-standard', '-z'], { encoding: 'buffer', stdio: ['ignore', 'pipe', 'ignore'] });
-  if (result.status !== 0) return walk(root);
-  return result.stdout.toString('utf8').split('\0').filter(Boolean).map(posix).sort();
+  if (result.status !== 0) return { paths: walk(root), insideGit: false };
+  return { paths: result.stdout.toString('utf8').split('\0').filter(Boolean).map(posix).sort(), insideGit: true };
 }
 
 function binaryMagic(buffer) {
@@ -80,17 +87,14 @@ export function classifyFile(root, rel, config = loadConfig(root)) {
   return { included: true, reason: null, size: stat.size, extension: ext || '<none>' };
 }
 
-export function buildInventory(root, { force = false } = {}) {
-  const paths = projectPaths(root); const config = loadConfig(root);
-  if (!force && fs.existsSync(paths.inventory)) {
-    const current = JSON.parse(fs.readFileSync(paths.inventory, 'utf8'));
-    if (current.schemaVersion === '2.0') return current;
-  }
-  const rules = loadDocgenIgnore(root); const included = []; const excluded = [];
-  for (const rel of candidatePaths(root)) {
+export function buildInventory(root) {
+  ruleCache.clear();
+  const paths = projectPaths(root); const config = loadConfig(root); const candidates = candidatePaths(root); const docgenRules = loadRules(path.join(root, '.docgenignore')); const included = []; const excluded = [];
+  for (const rel of candidates.paths) {
     const top = rel.split('/')[0];
     if (HARD_DIRS.has(top)) { excluded.push({ path: rel, reason: 'hard-exclusion' }); continue; }
-    if (ignoredByDocgen(rel, rules)) { excluded.push({ path: rel, reason: '.docgenignore' }); continue; }
+    if (!candidates.insideGit && config.ignore?.useGitignore !== false && ignoredByFallbackGitignore(root, rel)) { excluded.push({ path: rel, reason: '.gitignore' }); continue; }
+    if (config.ignore?.useDocgenignore !== false && ignoredByRules(rel, docgenRules)) { excluded.push({ path: rel, reason: '.docgenignore' }); continue; }
     const result = classifyFile(root, rel, config);
     if (!result.included) { excluded.push({ path: rel, reason: result.reason, size: result.size ?? 0 }); continue; }
     const content = fs.readFileSync(path.join(root, rel)); included.push({ path: rel, size: result.size, extension: result.extension, hash: sha256(content) });
