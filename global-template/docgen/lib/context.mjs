@@ -18,34 +18,23 @@ function ftsQuery(value) {
 function rowsForFacts(db, query, limit) {
   const match = ftsQuery(query);
   if (!match) return db.prepare('SELECT id,kind,name,path,line,statement,snippet,metadata,content_hash FROM facts ORDER BY path,line LIMIT ?').all(limit);
-  try {
-    return db.prepare(`SELECT f.id,f.kind,f.name,f.path,f.line,f.statement,f.snippet,f.metadata,f.content_hash,bm25(facts_fts) score FROM facts_fts JOIN facts f ON f.id=facts_fts.id WHERE facts_fts MATCH ? ORDER BY score LIMIT ?`).all(match, limit);
-  } catch {
-    return db.prepare('SELECT id,kind,name,path,line,statement,snippet,metadata,content_hash FROM facts WHERE lower(name||\' \'||statement||\' \'||path) LIKE ? LIMIT ?').all(`%${String(query).toLowerCase().split(/\s+/)[0] ?? ''}%`, limit);
-  }
+  try { return db.prepare(`SELECT f.id,f.kind,f.name,f.path,f.line,f.statement,f.snippet,f.metadata,f.content_hash,bm25(facts_fts) score FROM facts_fts JOIN facts f ON f.id=facts_fts.id WHERE facts_fts MATCH ? ORDER BY score LIMIT ?`).all(match, limit); }
+  catch { return db.prepare('SELECT id,kind,name,path,line,statement,snippet,metadata,content_hash FROM facts WHERE lower(name||\' \'||statement||\' \'||path) LIKE ? LIMIT ?').all(`%${String(query).toLowerCase().split(/\s+/)[0] ?? ''}%`, limit); }
 }
 
 function rowsForModels(db, query, limit) {
   const match = ftsQuery(query);
   if (!match) return db.prepare('SELECT id,model,kind,name,statement,classification,confidence,evidence,payload,content_hash FROM model_items LIMIT ?').all(limit);
-  try {
-    return db.prepare(`SELECT m.id,m.model,m.kind,m.name,m.statement,m.classification,m.confidence,m.evidence,m.payload,m.content_hash,bm25(model_fts) score FROM model_fts JOIN model_items m ON m.id=model_fts.id WHERE model_fts MATCH ? ORDER BY score LIMIT ?`).all(match, limit);
-  } catch { return []; }
+  try { return db.prepare(`SELECT m.id,m.model,m.kind,m.name,m.statement,m.classification,m.confidence,m.evidence,m.payload,m.content_hash,bm25(model_fts) score FROM model_fts JOIN model_items m ON m.id=model_fts.id WHERE model_fts MATCH ? ORDER BY score LIMIT ?`).all(match, limit); }
+  catch { return []; }
 }
 
-function compactFact(row) {
-  return { id: row.id, kind: row.kind, name: row.name, path: row.path, line: row.line, statement: row.statement, snippet: row.snippet, metadata: JSON.parse(row.metadata || '{}'), hash: row.content_hash };
-}
-function compactModel(row) {
-  return { id: row.id, model: row.model, kind: row.kind, name: row.name, statement: row.statement, classification: row.classification, confidence: row.confidence, evidence: JSON.parse(row.evidence || '[]'), payload: JSON.parse(row.payload || '{}'), hash: row.content_hash };
-}
+function compactFact(row) { return { id: row.id, kind: row.kind, name: row.name, path: row.path, line: row.line, statement: row.statement, snippet: row.snippet, metadata: JSON.parse(row.metadata || '{}'), hash: row.content_hash }; }
+function compactModel(row) { return { id: row.id, model: row.model, kind: row.kind, name: row.name, statement: row.statement, classification: row.classification, confidence: row.confidence, evidence: JSON.parse(row.evidence || '[]'), payload: JSON.parse(row.payload || '{}'), hash: row.content_hash }; }
 
 function fitBudget(base, facts, models, maxTokens) {
   const selectedFacts = []; const selectedModels = []; let used = estimateTokens(JSON.stringify(base));
-  const candidates = [
-    ...models.map((item) => ({ type: 'model', item, tokens: estimateTokens(JSON.stringify(item)) })),
-    ...facts.map((item) => ({ type: 'fact', item, tokens: estimateTokens(JSON.stringify(item)) }))
-  ].sort((a, b) => (a.type === 'model' ? -1 : 1) - (b.type === 'model' ? -1 : 1));
+  const candidates = [...models.map((item) => ({ type: 'model', item, tokens: estimateTokens(JSON.stringify(item)) })), ...facts.map((item) => ({ type: 'fact', item, tokens: estimateTokens(JSON.stringify(item)) }))];
   for (const candidate of candidates) {
     if (used + candidate.tokens > maxTokens) continue;
     used += candidate.tokens;
@@ -56,7 +45,7 @@ function fitBudget(base, facts, models, maxTokens) {
 
 export function compileContext(root, { stage, target = '', query = '', maxTokens, factLimit = 800, modelLimit = 500, metadata = {} }) {
   const paths = projectPaths(root); const config = loadConfig(root); const configured = config.context?.maxTokens?.[stage] ?? config.context?.maxTokens?.default ?? 60000;
-  const budget = Math.max(2000, Number(maxTokens ?? configured)); const db = openDatabase(paths.database);
+  const budget = Math.max(256, Number(maxTokens ?? configured)); const db = openDatabase(paths.database);
   const effectiveQuery = [STAGE_QUERIES[stage] ?? '', query, target].filter(Boolean).join(' ');
   const facts = rowsForFacts(db, effectiveQuery, factLimit).map(compactFact); const models = rowsForModels(db, effectiveQuery, modelLimit).map(compactModel);
   const base = { schemaVersion: '2.0', stage, target: target || null, query: effectiveQuery, metadata };
