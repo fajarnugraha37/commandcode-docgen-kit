@@ -35,8 +35,26 @@ jobs:
         working-directory: global-template/docgen
         run: npm run check
       - name: Unit and integration tests
+        if: runner.os != 'Windows'
         working-directory: global-template/docgen
         run: npm test
+      - name: Unit and integration tests with diagnostics
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: global-template/docgen
+        run: |
+          $output = & npm test 2>&1
+          $code = $LASTEXITCODE
+          $output | Tee-Object -FilePath windows-test-output.txt
+          exit $code
+      - name: Upload Windows test diagnostics
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-test-output
+          if-no-files-found: error
+          retention-days: 1
+          path: global-template/docgen/windows-test-output.txt
       - name: Installer dry run
         run: node install.mjs --dry-run --no-link-cli
       - name: Upload exact CI source
