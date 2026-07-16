@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { buildInventory } from './inventory.mjs';
-import { ensureDir, estimateTokens, now, posix, projectPaths, readJson, sha256, stableHash } from './core.mjs';
+import { ensureDir, estimateTokens, now, projectPaths, readJson, sha256, stableHash } from './core.mjs';
 
 function lineNumber(text, offset) { return text.slice(0, offset).split('\n').length; }
 function snippet(text, start, radius = 4) {
@@ -15,8 +15,18 @@ function addMatch(out, text, rel, kind, regex, nameGroup = 1, metadata = {}) {
     out.push({ id: sha256(`${kind}\0${rel}\0${line}\0${name}`).slice(0, 24), kind, name, path: rel, line, statement: match[0].trim(), snippet: snippet(text, line), metadata });
   }
 }
+function sourceChunks(rel, text, size = 80, overlap = 15) {
+  const lines = text.split(/\r?\n/); const chunks = []; const step = Math.max(1, size - overlap);
+  for (let start = 0; start < lines.length; start += step) {
+    const end = Math.min(lines.length, start + size); const body = lines.slice(start, end).join('\n').trim(); if (!body) continue;
+    const first = lines.slice(start, end).find((line) => line.trim())?.trim().slice(0, 160) || rel;
+    chunks.push({ id: sha256(`source-chunk\0${rel}\0${start + 1}\0${end}`).slice(0, 24), kind: 'source-chunk', name: `${rel}#L${start + 1}-L${end}`, path: rel, line: start + 1, statement: first, snippet: lines.slice(start, end).map((line, i) => `${start + i + 1}: ${line}`).join('\n'), metadata: { startLine: start + 1, endLine: end } });
+    if (end === lines.length) break;
+  }
+  return chunks;
+}
 function extractFacts(rel, text) {
-  const facts = []; const ext = path.extname(rel).toLowerCase();
+  const facts = sourceChunks(rel, text); const ext = path.extname(rel).toLowerCase();
   addMatch(facts, text, rel, 'url-path', /@Path\s*\(\s*["']([^"']+)["']\s*\)/g);
   addMatch(facts, text, rel, 'http-method', /@(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/g);
   addMatch(facts, text, rel, 'spring-endpoint', /@(GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping|RequestMapping)\s*\(([^)]*)\)/g, 1);
@@ -47,7 +57,8 @@ function openDatabase(file) {
     CREATE INDEX IF NOT EXISTS idx_facts_kind ON facts(kind);
     CREATE INDEX IF NOT EXISTS idx_facts_path ON facts(path);
     CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(id UNINDEXED,kind,name,path,statement,snippet,tokenize='unicode61 remove_diacritics 2');
-    CREATE TABLE IF NOT EXISTS model_items(id TEXT PRIMARY KEY,model TEXT NOT NULL,kind TEXT,name TEXT,statement TEXT,classification TEXT,confidence REAL,evidence TEXT,payload TEXT,content_hash TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS model_items(id TEXT PRIMARY KEY,semantic_id TEXT NOT NULL,model TEXT NOT NULL,kind TEXT,name TEXT,statement TEXT,classification TEXT,confidence REAL,evidence TEXT,payload TEXT,content_hash TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_model_semantic_id ON model_items(semantic_id);
     CREATE VIRTUAL TABLE IF NOT EXISTS model_fts USING fts5(id UNINDEXED,model,kind,name,statement,tokenize='unicode61 remove_diacritics 2');
     CREATE TABLE IF NOT EXISTS contexts(id TEXT PRIMARY KEY,stage TEXT NOT NULL,target TEXT,query TEXT,input_hash TEXT NOT NULL,estimated_tokens INTEGER NOT NULL,payload TEXT NOT NULL,created_at TEXT NOT NULL);
   `);
@@ -67,7 +78,7 @@ function replaceFacts(db, rel, facts) {
 }
 
 export function indexRepository(root, { force = false } = {}) {
-  const paths = projectPaths(root); const inventory = buildInventory(root, { force }); const db = openDatabase(paths.database);
+  const paths = projectPaths(root); const inventory = buildInventory(root); const db = openDatabase(paths.database);
   const known = new Map(db.prepare('SELECT path,hash FROM files').all().map((row) => [row.path, row.hash])); const current = new Set(inventory.files.map((x) => x.path));
   let changed = 0; let unchanged = 0; let factCount = 0;
   db.exec('BEGIN');
@@ -79,9 +90,7 @@ export function indexRepository(root, { force = false } = {}) {
       db.prepare('INSERT INTO files(path,hash,size,extension,indexed_at) VALUES(?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET hash=excluded.hash,size=excluded.size,extension=excluded.extension,indexed_at=excluded.indexed_at').run(file.path, file.hash, file.size, file.extension, now());
       changed++;
     }
-    for (const rel of known.keys()) if (!current.has(rel)) {
-      replaceFacts(db, rel, []); db.prepare('DELETE FROM files WHERE path=?').run(rel); changed++;
-    }
+    for (const rel of known.keys()) if (!current.has(rel)) { replaceFacts(db, rel, []); db.prepare('DELETE FROM files WHERE path=?').run(rel); changed++; }
     db.prepare("INSERT INTO metadata(key,value) VALUES('inventory_fingerprint',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(inventory.fingerprint);
     db.prepare("INSERT INTO metadata(key,value) VALUES('indexed_at',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(now());
     db.exec('COMMIT');
@@ -95,22 +104,22 @@ function walkItems(value, model, out, parent = '') {
   if (Array.isArray(value)) { for (const item of value) walkItems(item, model, out, parent); return; }
   if (!value || typeof value !== 'object') return;
   if (value.id || value.name || value.statement) {
-    const id = String(value.id ?? sha256(`${model}\0${parent}\0${JSON.stringify(value)}`).slice(0, 24));
-    out.push({ id, model, kind: String(value.kind ?? parent ?? 'item'), name: String(value.name ?? value.title ?? id), statement: String(value.statement ?? value.summary ?? value.description ?? ''), classification: String(value.classification ?? 'UNKNOWN'), confidence: Number(value.confidence ?? 0), evidence: value.evidence ?? [], payload: value });
+    const semanticId = String(value.id ?? sha256(`${model}\0${parent}\0${JSON.stringify(value)}`).slice(0, 24)); const id = `${model}:${semanticId}`;
+    out.push({ id, semanticId, model, kind: String(value.kind ?? parent ?? 'item'), name: String(value.name ?? value.title ?? semanticId), statement: String(value.statement ?? value.summary ?? value.description ?? ''), classification: String(value.classification ?? 'UNKNOWN'), confidence: Number(value.confidence ?? 0), evidence: value.evidence ?? [], payload: value });
   }
   for (const [key, child] of Object.entries(value)) if (!['evidence','sourceModelRefs'].includes(key)) walkItems(child, model, out, key);
 }
 
 export function ingestModels(root) {
-  const paths = projectPaths(root); const db = openDatabase(paths.database); const files = fs.existsSync(paths.model) ? fs.readdirSync(paths.model).filter((x) => x.endsWith('.json')) : [];
-  const insert = db.prepare('INSERT INTO model_items(id,model,kind,name,statement,classification,confidence,evidence,payload,content_hash) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET model=excluded.model,kind=excluded.kind,name=excluded.name,statement=excluded.statement,classification=excluded.classification,confidence=excluded.confidence,evidence=excluded.evidence,payload=excluded.payload,content_hash=excluded.content_hash');
+  const paths = projectPaths(root); const db = openDatabase(paths.database); const files = fs.existsSync(paths.model) ? fs.readdirSync(paths.model).filter((x) => x.endsWith('.json') && !x.endsWith('-bundle.json')) : [];
+  const insert = db.prepare('INSERT INTO model_items(id,semantic_id,model,kind,name,statement,classification,confidence,evidence,payload,content_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET semantic_id=excluded.semantic_id,model=excluded.model,kind=excluded.kind,name=excluded.name,statement=excluded.statement,classification=excluded.classification,confidence=excluded.confidence,evidence=excluded.evidence,payload=excluded.payload,content_hash=excluded.content_hash');
   const insertFts = db.prepare('INSERT INTO model_fts(id,model,kind,name,statement) VALUES(?,?,?,?,?)');
   db.exec('BEGIN'); let count = 0;
   try {
     db.exec('DELETE FROM model_items; DELETE FROM model_fts;');
     for (const name of files) {
       const model = path.basename(name, '.json'); const items = []; walkItems(readJson(path.join(paths.model, name), {}), model, items);
-      for (const item of items) { insert.run(item.id, item.model, item.kind, item.name, item.statement, item.classification, item.confidence, JSON.stringify(item.evidence), JSON.stringify(item.payload), stableHash(item.payload)); insertFts.run(item.id, item.model, item.kind, item.name, item.statement); count++; }
+      for (const item of items) { insert.run(item.id, item.semanticId, item.model, item.kind, item.name, item.statement, item.classification, item.confidence, JSON.stringify(item.evidence), JSON.stringify(item.payload), stableHash(item.payload)); insertFts.run(item.id, item.model, item.kind, item.name, item.statement); count++; }
     }
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); db.close(); throw error; }
@@ -118,7 +127,7 @@ export function ingestModels(root) {
 }
 
 export function databaseStats(root) {
-  const db = openDatabase(projectPaths(root).database); const stats = { files: db.prepare('SELECT COUNT(*) n FROM files').get().n, facts: db.prepare('SELECT COUNT(*) n FROM facts').get().n, modelItems: db.prepare('SELECT COUNT(*) n FROM model_items').get().n, estimatedIndexedTokens: 0 };
+  const db = openDatabase(projectPaths(root).database); const stats = { files: db.prepare('SELECT COUNT(*) n FROM files').get().n, facts: db.prepare('SELECT COUNT(*) n FROM facts').get().n, sourceChunks: db.prepare("SELECT COUNT(*) n FROM facts WHERE kind='source-chunk'").get().n, modelItems: db.prepare('SELECT COUNT(*) n FROM model_items').get().n, estimatedIndexedTokens: 0 };
   const samples = db.prepare('SELECT statement,snippet FROM facts').all(); stats.estimatedIndexedTokens = samples.reduce((n, row) => n + estimateTokens(`${row.statement}\n${row.snippet}`), 0); db.close(); return stats;
 }
 
