@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docgen:quality-summary:1.0",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "qualityProfile",
+    "sourceSnapshot",
+    "pages",
+    "localGateFailures",
+    "warningCount",
+    "semanticSummary",
+    "auditSummary"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "generatedAt": {
+      "type": "string"
+    },
+    "qualityProfile": {
+      "type": "string"
+    },
+    "sourceSnapshot": {
+      "type": "object"
+    },
+    "pages": {
+      "type": "array"
+    },
+    "localGateFailures": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "warningCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "semanticSummary": {
+      "type": "object",
+      "required": [
+        "claims",
+        "grounded",
+        "unsupported",
+        "stale",
+        "claimGroundingRatio",
+        "contradictions",
+        "duplicateGroups",
+        "stalePages"
+      ]
+    },
+    "auditSummary": {
+      "type": "object"
+    }
+  }
+}

@@ -38,9 +38,221 @@ Install the engine once. Initialize any number of repositories independently.
 
 ---
 
-## What's new in v0.6.0
+## What's new in v0.7.0
 
-v0.6.0 is the **contract-firewall release**. It addresses the root class behind both expensive failures reported in earlier versions:
+v0.7.0 is the **P0 Documentation Trustworthiness release**. It keeps the v0.6 contract firewall and adds the controls required to determine whether generated documentation is actually supported by repository evidence rather than merely long and plausible.
+
+The P0 scope is intentionally limited to:
+
+1. strongly typed semantic model items;
+2. claim-level source traceability;
+3. evidence-centric quality metrics;
+4. cross-page contradiction and duplicate detection;
+5. source commit/fingerprint freshness metadata;
+6. advisory word-count targets instead of prose-length hard gates.
+
+The central quality model is now:
+
+```text
+source evidence
+      │
+      ▼
+typed semantic items
+      │
+      ▼
+page claims + source/model references
+      │
+      ▼
+deterministic coverage and consistency metrics
+      │
+      ▼
+quality gate
+```
+
+A page is not considered trustworthy merely because it contains many words, headings, or diagrams.
+
+### Strongly typed semantic items
+
+Every normalized model item is committed as an object with a stable identity and epistemic contract:
+
+```json
+{
+  "id": "rule-submit-draft-only",
+  "kind": "business-rule",
+  "name": "Draft-only submission",
+  "statement": "A quote can be submitted only from DRAFT",
+  "classification": "FACT",
+  "confidence": 1,
+  "evidence": [
+    {
+      "id": "quote-service-submit",
+      "path": "src/main/java/example/QuoteService.java",
+      "symbol": "QuoteService#submit",
+      "startLine": 120,
+      "endLine": 146,
+      "note": null
+    }
+  ],
+  "sourceModelRefs": [],
+  "unknowns": [],
+  "tags": []
+}
+```
+
+Typed contracts apply to components, relationships, workflows, actors, capabilities, concepts, rules, decisions, branches, lifecycles, use cases, six flow types, endpoints, message handlers, dependencies, data stores, and scheduled jobs.
+
+`FACT` items without resolvable direct evidence are rejected before downstream generation. Unsupported statements must be classified as `INFERENCE` or `UNKNOWN`.
+
+### Claim-level page traceability
+
+Every generated page now has a companion artifact:
+
+```text
+.docgen/traceability/pages/<page-id>.json
+```
+
+The sidecar records material claims, their page section, epistemic classification, source evidence, normalized model/catalog references, and coverage information:
+
+```json
+{
+  "pageId": "quote-lifecycle",
+  "pagePath": "docs/business/quote-lifecycle.md",
+  "claims": [
+    {
+      "id": "quote-lifecycle-claim-1",
+      "kind": "claim",
+      "section": "Submission",
+      "statement": "Only DRAFT quotes may be submitted",
+      "classification": "FACT",
+      "confidence": 1,
+      "subject": "quote",
+      "predicate": "submission-allowed-from",
+      "object": "DRAFT",
+      "polarity": "positive",
+      "evidence": [
+        {
+          "path": "src/main/java/example/QuoteService.java",
+          "symbol": "QuoteService#submit",
+          "startLine": 120,
+          "endLine": 146
+        }
+      ],
+      "sourceModelRefs": ["rule-submit-draft-only"],
+      "intentionalDuplicate": false
+    }
+  ],
+  "coverage": {
+    "evidenceRefsUsed": ["quote-service"],
+    "modelItemRefs": ["rule-submit-draft-only"],
+    "catalogItemRefs": [],
+    "branchItemRefs": ["branch-submit-status"]
+  }
+}
+```
+
+Writers create the Markdown page and traceability sidecar in the same bounded Command Code run. The orchestrator fills page/input hashes after generation.
+
+### Evidence-centric quality gates
+
+`docgen quality` now prioritizes:
+
+- claim grounding ratio;
+- declared evidence coverage ratio;
+- model-item coverage;
+- exhaustive catalog coverage;
+- decision/branch coverage;
+- unsupported claim count;
+- stale page/input/source fingerprints;
+- cross-page contradictions;
+- audit severity.
+
+Default P0 thresholds:
+
+```json
+{
+  "semanticMetrics": {
+    "minStructuredClaimRatio": 0.7,
+    "minClaimGroundingRatio": 0.9,
+    "minEvidenceCoverageRatio": 0.8,
+    "minModelCoverageRatio": 0.9,
+    "minCatalogCoverageRatio": 1.0,
+    "minBranchCoverageRatio": 0.9,
+    "minEvidenceClaimsPer1000Words": 1.5,
+    "evidenceClaimDensityGate": "hard",
+    "maxUnsupportedClaims": 0,
+    "maxContradictions": 0,
+    "maxClaimIdCollisions": 0,
+    "maxStalePages": 0,
+    "duplicateClaimsAsWarning": true
+  }
+}
+```
+
+Word count remains visible but is advisory. A short grounded reference page can pass; a long generic page with unsupported claims fails.
+
+### Cross-page consistency index
+
+Run without consuming LLM tokens:
+
+```powershell
+docgen traceability
+```
+
+It creates:
+
+```text
+.docgen/traceability/index.json
+.docgen/traceability/contradictions.json
+.docgen/traceability/duplicates.json
+.docgen/traceability/freshness.json
+```
+
+Contradictions are detected when grounded claims use the same normalized subject/predicate but disagree on value or polarity. Exact semantic duplicates are grouped separately; claims explicitly marked `intentionalDuplicate` are excluded from duplicate failures.
+
+### Source freshness
+
+Traceability artifacts capture:
+
+```text
+git commit
+branch
+dirty state
+repository source fingerprint
+page hash
+evidence/model input hash
+```
+
+A page becomes stale when its Markdown changes, declared evidence/model content changes, or the repository source fingerprint changes without regeneration/revalidation.
+
+### Upgrade from v0.6.0
+
+```powershell
+# Install the global v0.7.0 engine
+.\install.ps1 -Force
+
+cd C:\path	o
+epository
+
+docgen migrate
+docgen contract-test
+docgen validate
+docgen resume
+```
+
+Existing valid Markdown is preserved. Pages without a v0.7 traceability sidecar are treated as legacy-unmapped and receive targeted enrichment rather than full regeneration.
+
+### P0 commands
+
+```powershell
+docgen traceability   # rebuild claim, contradiction, duplicate and freshness indexes
+docgen quality        # run semantic/evidence quality gates
+docgen contract-test  # zero-token contract regression suite
+docgen validate       # contract + static + generated artifact validation
+```
+
+## Contract firewall retained from v0.6.0
+
+v0.7.0 is the **contract-firewall release**. It addresses the root class behind both expensive failures reported in earlier versions:
 
 ```text
 LLM producer emits a reasonable representation
@@ -147,7 +359,7 @@ A page is skipped only while that input fingerprint remains current. Existing va
 ### Safe recovery from the reported failure
 
 ```powershell
-# From the extracted v0.6.0 package
+# From the extracted v0.7.0 package
 .\install.ps1 -Force
 
 cd C:\path\to\your\repository
@@ -171,6 +383,7 @@ Do not delete `.docgen` or `docs`. A page already generated as `docs/orientation
 7. [Quick start](#quick-start)
 8. [Live progress, heartbeat, logs, and error visibility](#live-progress-heartbeat-logs-and-error-visibility)
 9. [Comprehensive quality profile](#comprehensive-quality-profile)
+10. [P0 trustworthiness and traceability](#p0-trustworthiness-and-traceability)
 10. [How it works](#how-it-works)
 9. [Execution flow](#execution-flow)
 10. [State machine](#state-machine)
@@ -262,7 +475,7 @@ DocGen does not require a particular renderer.
 
 Earlier versions of the kit copied the entire engine into every target repository. That model is useful for a fully self-contained team-owned repository, but it is inefficient when one user wants to use the same documentation system across many repositories.
 
-The default architecture in v0.6.0 is therefore:
+The default architecture in v0.7.0 is therefore:
 
 ```text
 install once globally
@@ -400,10 +613,10 @@ Extract the release ZIP first.
 
 ```powershell
 Expand-Archive `
-  .\commandcode-docgen-kit-0.6.0.zip `
+  .\commandcode-docgen-kit-0.7.0.zip `
   -DestinationPath .\commandcode-docgen-kit
 
-cd .\commandcode-docgen-kit\commandcode-docgen-kit-0.6.0
+cd .\commandcode-docgen-kit\commandcode-docgen-kit-0.7.0
 
 .\install.ps1
 ```
@@ -411,8 +624,8 @@ cd .\commandcode-docgen-kit\commandcode-docgen-kit-0.6.0
 ## macOS / Linux
 
 ```bash
-unzip commandcode-docgen-kit-0.6.0.zip
-cd commandcode-docgen-kit-0.6.0
+unzip commandcode-docgen-kit-0.7.0.zip
+cd commandcode-docgen-kit-0.7.0
 ./install.sh
 ```
 
@@ -634,7 +847,7 @@ docgen snapshot
 
 # Live progress, heartbeat, logs, and error visibility
 
-DocGen v0.6.0 does not run Command Code as a silent blocking child process. Every LLM-backed stage is monitored as a live asynchronous process.
+DocGen v0.7.0 does not run Command Code as a silent blocking child process. Every LLM-backed stage is monitored as a live asynchronous process.
 
 A run now looks like:
 
@@ -767,7 +980,7 @@ Command Code reached --max-turns
 
 # Comprehensive quality profile
 
-The default v0.6.0 profile is:
+The default v0.7.0 profile is:
 
 ```json
 {
@@ -1876,7 +2089,7 @@ docgen generate --all
 
 # Contract firewall and transactional artifacts
 
-Prompt instructions are soft constraints. v0.6.0 therefore does not trust an LLM to reproduce an exact JSON spelling or output-path notation.
+Prompt instructions are soft constraints. v0.7.0 therefore does not trust an LLM to reproduce an exact JSON spelling or output-path notation.
 
 ## Single representation principle
 
@@ -1960,7 +2173,7 @@ docgen doctor          # runtime compatibility + contract suite
 
 # Resumability, batching, and checkpoints
 
-v0.6.0 is resumable by default.
+v0.7.0 is resumable by default.
 
 ```powershell
 docgen resume
@@ -2011,7 +2224,7 @@ v0.4.x worst-case baseline
 into:
 
 ```text
-v0.6.0 default baseline
+v0.7.0 default baseline
 ceil(59 / 4) generation batches = 15
 ceil(59 / 6) audit batches      = 10
 enrichment                      = only pages failing local quality gates
@@ -2027,7 +2240,7 @@ docgen all --fresh
 
 # Rate limits, retries, and provider failures
 
-Command Code documents rate-limit failures as exit code `5`; connection failures use `6`, API 5xx failures use `7`, and max-turn exhaustion uses `8`. v0.6.0 handles `5`, `6`, and `7` as retryable by default. It also detects common provider text such as `429`, `rate limit exceeded`, `too many requests`, and `quota exceeded` when a provider reports a generic exit code.
+Command Code documents rate-limit failures as exit code `5`; connection failures use `6`, API 5xx failures use `7`, and max-turn exhaustion uses `8`. v0.7.0 handles `5`, `6`, and `7` as retryable by default. It also detects common provider text such as `429`, `rate limit exceeded`, `too many requests`, and `quota exceeded` when a provider reports a generic exit code.
 
 Default policy:
 
@@ -2711,7 +2924,7 @@ For a team that needs exact engine reproducibility inside the repository, use th
 
 ## Automatic additive migration from v0.3.x project config
 
-When v0.6.0 runs inside a repository initialized by an older global-first release, it additively merges new defaults into `.docgen/config/documentation.json`. Existing custom scalar values and existing array entries are preserved; new page types, audiences, semantics turn-budget defaults, Mermaid-only quality settings, and knowledge-base settings are added. The project marker is updated to the current kit version.
+When v0.7.0 runs inside a repository initialized by an older global-first release, it additively merges new defaults into `.docgen/config/documentation.json`. Existing custom scalar values and existing array entries are preserved; new page types, audiences, semantics turn-budget defaults, Mermaid-only quality settings, and knowledge-base settings are added. The project marker is updated to the current kit version.
 
 You can run the migration explicitly:
 
@@ -2730,13 +2943,13 @@ Version 0.1.x installed the complete engine inside each repository. Version 0.6.
 Recommended migration:
 
 ```bash
-# 1. Install v0.6.0 globally once
+# 1. Install v0.7.0 globally once
 node install.mjs --force
 
 # 2. Enter an existing v0.1.x repository
 cd /path/to/repository
 
-# 3. Add the v0.6.0 project marker/template without replacing existing config
+# 3. Add the v0.7.0 project marker/template without replacing existing config
 docgen init
 
 # 4. Verify the global runtime
@@ -2932,7 +3145,7 @@ Do not delete the generated page or rerun discovery. The canonical path is repai
 
 ## Provider rate limit or HTTP 429
 
-v0.6.0 retries automatically with visible exponential backoff. Review the attempt logs in `.docgen/runs/`. Reduce other concurrent Command Code sessions and lower batch sizes only when the provider still rejects batched requests.
+v0.7.0 retries automatically with visible exponential backoff. Review the attempt logs in `.docgen/runs/`. Reduce other concurrent Command Code sessions and lower batch sizes only when the provider still rejects batched requests.
 
 To make the policy more conservative:
 
@@ -2954,7 +3167,7 @@ To make the policy more conservative:
 
 ## `docgen all` appears to hang or stays quiet
 
-v0.6.0 prints a heartbeat while every Command Code child process is alive. You should see output similar to:
+v0.7.0 prints a heartbeat while every Command Code child process is alive. You should see output similar to:
 
 ```text
 [docgen] discover:. RUNNING | elapsed 1m 20s | pid 18420 | changed artifacts 7
@@ -3337,7 +3550,7 @@ For a repository that requires an exact frozen engine version, use the self-cont
 
 # Compatibility notes
 
-The v0.6.0 architecture intentionally aligns with Command Code user-level and project-level extension scopes:
+The v0.7.0 architecture intentionally aligns with Command Code user-level and project-level extension scopes:
 
 ```text
 User-level reusable components:
@@ -3468,7 +3681,7 @@ This workflow preserves the most important principle of the system:
 
 # Deep system knowledge-base target
 
-DocGen v0.6.0 does **not** treat the two benchmark home pages as the complete target. A Mintlify-style site is a hierarchy of categories, pages, and deep sections. DocGen therefore optimizes for **breadth × depth**:
+DocGen v0.7.0 does **not** treat the two benchmark home pages as the complete target. A Mintlify-style site is a hierarchy of categories, pages, and deep sections. DocGen therefore optimizes for **breadth × depth**:
 
 ```text
 Repository
@@ -3551,7 +3764,7 @@ The discovery contract requires:
 }
 ```
 
-However, cheap models can still emit semantically equivalent shapes such as `files` or `entries`. v0.6.0 normalizes these variants after discovery. If no list exists, it scans `.docgen/evidence/**` and constructs canonical `artifacts[]` deterministically. The exact v0.3.0 failure:
+However, cheap models can still emit semantically equivalent shapes such as `files` or `entries`. v0.7.0 normalizes these variants after discovery. If no list exists, it scans `.docgen/evidence/**` and constructs canonical `artifacts[]` deterministically. The exact v0.3.0 failure:
 
 ```text
 Error: .docgen/evidence/index.json missing required key: artifacts

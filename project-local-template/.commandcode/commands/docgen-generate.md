@@ -1,1 +1,1 @@
-Run the project-local DocGen orchestrator command `node scripts/docgen.mjs generate $1` and report the result.
+Run the globally installed DocGen orchestrator command `docgen generate $1`. Generate exactly the requested manifest page through the bounded orchestrated workflow.

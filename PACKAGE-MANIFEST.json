@@ -1,6 +1,6 @@
 {
   "name": "commandcode-docgen-kit",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "defaultInstallationScope": "global",
   "globalComponents": [
     "agents",
@@ -20,19 +20,30 @@
     ".docgen/audit",
     ".docgen/state",
     ".docgen/runs",
+    ".docgen/traceability",
     "docs"
   ],
   "counts": {
     "agents": 6,
-    "skills": 28,
-    "commands": 16,
-    "schemas": 12,
+    "skills": 30,
+    "commands": 17,
+    "schemas": 15,
     "prompts": 12
   },
   "contractFirewall": {
-    "boundaries": 9,
-    "deterministicTests": 10,
+    "boundaries": 11,
+    "deterministicTests": 17,
     "transactionalStages": 5,
     "zeroTokenCommand": "docgen contract-test"
+  },
+  "p0Trustworthiness": {
+    "typedSemanticModels": true,
+    "claimLevelTraceability": true,
+    "evidenceCentricQuality": true,
+    "crossPageContradictions": true,
+    "duplicateDetection": true,
+    "sourceFreshness": true,
+    "wordCountGate": "advisory",
+    "zeroTokenCommand": "docgen traceability"
   }
 }

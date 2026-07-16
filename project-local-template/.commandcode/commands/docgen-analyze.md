@@ -1,1 +1,1 @@
-Run the project-local DocGen orchestrator command `node scripts/docgen.mjs analyze $ARGUMENTS` and report the result.
+Run the globally installed DocGen orchestrator command `docgen analyze` for scope `$ARGUMENTS` (use all current evidence when empty). Report completion or the exact failure.

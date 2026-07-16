@@ -14,22 +14,40 @@
   ],
   "properties": {
     "businessFlows": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "controlFlows": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "requestFlows": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "trafficFlows": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "dataFlows": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "eventFlows": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "schemaVersion": {
       "const": "1.0"

@@ -18,16 +18,28 @@
       "type": "string"
     },
     "components": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "relationships": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "workflows": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "unknowns": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     }
   }
 }

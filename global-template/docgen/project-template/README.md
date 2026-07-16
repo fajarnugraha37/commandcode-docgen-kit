@@ -16,3 +16,12 @@ In addition to technical architecture, DocGen generates repository-local normali
 - `model/catalogs.json`
 
 Published diagrams are Mermaid-only.
+
+## P0 trustworthiness artifacts
+
+- `traceability/pages/*.json`: claim-level source mappings per page.
+- `traceability/index.json`: aggregated claims and source snapshot.
+- `traceability/contradictions.json`: conflicting subject/predicate claims.
+- `traceability/duplicates.json`: unintentional repeated claims.
+- `traceability/freshness.json`: page/input/source staleness status.
+- `audit/quality-summary.json`: evidence-centric quality metrics.

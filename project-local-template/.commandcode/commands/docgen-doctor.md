@@ -1,1 +1,1 @@
-Run the project-local DocGen orchestrator command `node scripts/docgen.mjs doctor` and report the result.
+Run `docgen doctor` for the current initialized repository and summarize compatibility, global engine health, skill loading, and authentication readiness.

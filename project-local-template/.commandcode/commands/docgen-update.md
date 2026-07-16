@@ -1,1 +1,1 @@
-Run the project-local DocGen orchestrator command `node scripts/docgen.mjs update $ARGUMENTS` and report the result.
+Run the globally installed DocGen orchestrator command `docgen update $ARGUMENTS`. When no paths are supplied, let DocGen use its fingerprint snapshot to detect changes.

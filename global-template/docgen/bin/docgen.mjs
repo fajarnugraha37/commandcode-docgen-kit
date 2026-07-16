@@ -35,6 +35,13 @@ const configPath = path.join(root, '.docgen', 'config', 'documentation.json');
 const fingerprintsPath = path.join(root, '.docgen', 'state', 'fingerprints.json');
 const pageStatePath = path.join(root, '.docgen', 'state', 'pages.json');
 const preflightPath = path.join(root, '.docgen', 'plan', 'preflight.json');
+const traceabilityRoot = path.join(root, '.docgen', 'traceability');
+const traceabilityPagesRoot = path.join(traceabilityRoot, 'pages');
+const traceabilityIndexPath = path.join(traceabilityRoot, 'index.json');
+const contradictionsPath = path.join(traceabilityRoot, 'contradictions.json');
+const duplicatesPath = path.join(traceabilityRoot, 'duplicates.json');
+const freshnessPath = path.join(traceabilityRoot, 'freshness.json');
+let sourceSnapshotCache = null;
 
 function fail(message, code = 1) { console.error(`ERROR: ${message}`); process.exit(code); }
 function exists(relOrAbs) { return fs.existsSync(path.isAbsolute(relOrAbs) ? relOrAbs : path.join(root, relOrAbs)); }
@@ -414,14 +421,103 @@ function canonicalModelBase(obj = {}) {
     generatedAt: obj.generatedAt ?? obj.createdAt ?? obj.updatedAt ?? obj.timestamp ?? now()
   };
 }
+function normalizeClassification(value, evidence = []) {
+  const raw = String(value ?? '').trim().toUpperCase();
+  if (['FACT', 'INFERENCE', 'UNKNOWN'].includes(raw)) return raw;
+  return evidence.length ? 'FACT' : 'UNKNOWN';
+}
+function normalizeConfidence(value, classification = 'UNKNOWN') {
+  const n = Number(value);
+  if (Number.isFinite(n)) return Math.max(0, Math.min(1, n));
+  return classification === 'FACT' ? 1 : classification === 'INFERENCE' ? 0.65 : 0;
+}
+function parseEvidenceLocation(raw) {
+  let value = String(raw ?? '').replaceAll('\\', '/'); let startLine = null, endLine = null;
+  let m = value.match(/^(.*)#L(\d+)(?:-L?(\d+))?$/i);
+  if (!m) m = value.match(/^(.*?):(\d+)(?:-(\d+))?$/);
+  if (m && m[1] && !/^[A-Za-z]$/.test(m[1])) { value = m[1]; startLine = Number(m[2]); endLine = Number(m[3] ?? m[2]); }
+  return { path: value, startLine, endLine };
+}
+function normalizeEvidenceRef(value, index = 0) {
+  if (typeof value === 'string') { const loc=parseEvidenceLocation(value); return { id:`evidence-${index+1}`, path:loc.path, symbol:null, startLine:loc.startLine, endLine:loc.endLine, note:null }; }
+  const obj = value && typeof value === 'object' ? value : {};
+  const loc = parseEvidenceLocation(scalarValue(obj, ['path','file','sourcePath','source','location'], ''));
+  const line = scalarValue(obj, ['line','lineNumber'], null);
+  return {
+    id: slug(scalarValue(obj, ['id','key','name'], `evidence-${index+1}`)), path: loc.path,
+    symbol: scalarValue(obj, ['symbol','method','class','function','member'], null),
+    startLine: Number(scalarValue(obj, ['startLine','lineStart'], loc.startLine ?? line)) || null,
+    endLine: Number(scalarValue(obj, ['endLine','lineEnd'], loc.endLine ?? line)) || null,
+    note: scalarValue(obj, ['note','reason','description'], null)
+  };
+}
+function normalizeEvidenceRefs(value) {
+  const arr = Array.isArray(value) ? value : value ? [value] : [];
+  return uniqueArray(arr.map(normalizeEvidenceRef).filter((x) => x.path || x.symbol));
+}
+function normalizeStringRefs(value) {
+  const arr = Array.isArray(value) ? value : value ? [value] : [];
+  return [...new Set(arr.map((x) => typeof x === 'string' ? x : x?.id ?? x?.path ?? x?.name).filter(Boolean).map(String))];
+}
+function typedBase(value, kind, index, options = {}) {
+  const obj = typeof value === 'string' ? { statement: value, name: value } : value && typeof value === 'object' ? { ...value } : { statement: String(value ?? '') };
+  const evidence = normalizeEvidenceRefs(canonicalArray(obj, 'evidence', ['sources', 'sourceRefs', 'references', 'proof']));
+  const name = String(scalarValue(obj, ['name', 'title', 'label', 'operationId', 'handler', 'statement', 'description'], `${kind}-${index + 1}`));
+  const statement = String(scalarValue(obj, ['statement', 'rule', 'summary', 'description', 'name', 'title'], name));
+  const classification = normalizeClassification(scalarValue(obj, ['classification', 'epistemicStatus', 'status'], null), evidence);
+  const out = {
+    id: slug(scalarValue(obj, ['id', 'key', 'code', 'operationId', 'name', 'title'], `${kind}-${index + 1}`)),
+    kind,
+    name,
+    statement,
+    description: scalarValue(obj, ['description', 'details', 'explanation'], null),
+    classification,
+    confidence: normalizeConfidence(scalarValue(obj, ['confidence', 'score'], null), classification),
+    evidence,
+    sourceModelRefs: normalizeStringRefs(canonicalArray(obj, 'sourceModelRefs', ['modelRefs', 'relatedModelItems', 'semanticRefs'])),
+    unknowns: canonicalArray(obj, 'unknowns', ['openQuestions', 'gaps']).map(String),
+    tags: normalizeStringRefs(canonicalArray(obj, 'tags', ['labels', 'categories']))
+  };
+  for (const [key, aliases, fallback] of options.fields ?? []) out[key] = scalarValue(obj, [key, ...aliases], fallback);
+  for (const [key, aliases] of options.arrays ?? []) out[key] = canonicalArray(obj, key, aliases);
+  return out;
+}
+function normalizeStep(value, index = 0) {
+  const x = typedBase(value, 'flow-step', index, { fields: [
+    ['actor', ['role', 'principal'], null], ['component', ['service', 'module', 'system'], null],
+    ['action', ['operation', 'activity', 'statement'], null], ['input', ['request', 'sourceData'], null],
+    ['output', ['response', 'result', 'targetData'], null], ['condition', ['guard', 'when'], null]
+  ]});
+  const obj = value && typeof value === 'object' ? value : {};
+  x.order = Number(scalarValue(obj, ['order', 'sequence', 'index'], index + 1)) || index + 1;
+  return x;
+}
+
+function normalizeBranch(value, index = 0) {
+  return typedBase(value, 'branch', index, { fields: [
+    ['condition', ['guard', 'when', 'expression'], null], ['outcome', ['result', 'then'], null],
+    ['elseOutcome', ['otherwise', 'else'], null]
+  ], arrays: [['nextSteps', ['targets', 'transitions']]] });
+}
+function collectArrayValues(obj, canonicalKey, aliases = []) {
+  const values=[]; for(const key of [canonicalKey,...aliases]){ const value=obj?.[key]; if(Array.isArray(value)) values.push(...value); else if(value&&typeof value==='object') values.push(...Object.values(value)); else if(value!==undefined&&value!==null&&value!=='') values.push(value); } return values;
+}
+function normalizeTypedArray(obj, canonicalKey, aliases, kind, options = {}) {
+  return collectArrayValues(obj, canonicalKey, aliases).map((x, i) => {
+    const item = typedBase(x, kind, i, options);
+    if (options.steps) item.steps = canonicalArray(x && typeof x === 'object' ? x : {}, 'steps', ['activities', 'sequence']).map(normalizeStep);
+    if (options.branches) item.branches = canonicalArray(x && typeof x === 'object' ? x : {}, 'branches', ['conditions', 'decisionBranches']).map(normalizeBranch);
+    return item;
+  });
+}
 function normalizeSystemObject(input = {}) {
   const obj = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
   return {
     schemaVersion: '1.0', generatedAt: obj.generatedAt ?? obj.createdAt ?? obj.updatedAt ?? obj.timestamp ?? now(),
-    components: canonicalArray(obj, 'components', ['services', 'modules', 'subsystems', 'applications', 'nodes']),
-    relationships: canonicalArray(obj, 'relationships', ['dependencies', 'links', 'interactions', 'connections', 'edges']),
-    workflows: canonicalArray(obj, 'workflows', ['processes', 'executionFlows', 'systemFlows', 'scenarios']),
-    unknowns: canonicalArray(obj, 'unknowns', ['openQuestions', 'unresolved', 'gaps', 'uncertainties']),
+    components: normalizeTypedArray(obj, 'components', ['services', 'modules', 'subsystems', 'applications', 'nodes'], 'component', { arrays: [['responsibilities', ['capabilities', 'functions']], ['interfaces', ['ports', 'endpoints']], ['dependencies', ['dependsOn']]] }),
+    relationships: normalizeTypedArray(obj, 'relationships', ['dependencies', 'links', 'interactions', 'connections', 'edges'], 'relationship', { fields: [['from', ['source', 'origin'], null], ['to', ['target', 'destination'], null], ['mechanism', ['protocol', 'channel', 'type'], null]] }),
+    workflows: normalizeTypedArray(obj, 'workflows', ['processes', 'executionFlows', 'systemFlows', 'scenarios'], 'workflow', { fields: [['trigger', ['start', 'initiator'], null], ['outcome', ['result', 'end'], null]], arrays: [['failurePaths', ['errors', 'exceptions']]], steps: true, branches: true }),
+    unknowns: normalizeTypedArray(obj, 'unknowns', ['openQuestions', 'unresolved', 'gaps', 'uncertainties'], 'unknown'),
     metadata: obj.metadata ?? {}
   };
 }
@@ -429,53 +525,55 @@ function normalizeBusinessObject(input = {}) {
   const obj = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
   return {
     schemaVersion: '1.0', generatedAt: obj.generatedAt ?? obj.createdAt ?? obj.updatedAt ?? obj.timestamp ?? now(),
-    actors: canonicalArray(obj, 'actors', ['roles', 'personas', 'participants', 'users']),
-    capabilities: canonicalArray(obj, 'capabilities', ['businessCapabilities', 'functions', 'features']),
-    concepts: canonicalArray(obj, 'concepts', ['domainConcepts', 'entities', 'terms', 'vocabulary']),
-    businessRules: canonicalArray(obj, 'businessRules', ['rules', 'policies', 'businessLogic']),
-    decisions: canonicalArray(obj, 'decisions', ['decisionPoints', 'decisionRules']),
-    branchConditions: canonicalArray(obj, 'branchConditions', ['branches', 'conditions', 'guards']),
-    lifecycles: canonicalArray(obj, 'lifecycles', ['lifeCycles', 'stateMachines', 'stateLifecycles']),
-    invariants: canonicalArray(obj, 'invariants', ['domainInvariants', 'constraints']),
-    useCases: canonicalArray(obj, 'useCases', ['usecases', 'scenarios', 'businessScenarios']),
-    unknowns: canonicalArray(obj, 'unknowns', ['openQuestions', 'unresolved', 'gaps', 'uncertainties']),
+    actors: normalizeTypedArray(obj, 'actors', ['roles', 'personas', 'participants', 'users'], 'actor', { arrays: [['responsibilities', ['duties']], ['goals', ['outcomes']]] }),
+    capabilities: normalizeTypedArray(obj, 'capabilities', ['businessCapabilities', 'functions', 'features'], 'capability', { arrays: [['owners', ['actors']], ['outcomes', ['results']]] }),
+    concepts: normalizeTypedArray(obj, 'concepts', ['domainConcepts', 'entities', 'terms', 'vocabulary'], 'concept', { fields: [['definition', ['meaning', 'description'], null]], arrays: [['aliases', ['synonyms']], ['relationships', ['relatedConcepts']]] }),
+    businessRules: normalizeTypedArray(obj, 'businessRules', ['rules', 'policies', 'businessLogic'], 'business-rule', { fields: [['trigger', ['when'], null], ['outcome', ['result', 'then'], null], ['failureOutcome', ['otherwise', 'error'], null]], arrays: [['conditions', ['guards', 'preconditions']], ['exceptions', ['overrides']]] }),
+    decisions: normalizeTypedArray(obj, 'decisions', ['decisionPoints', 'decisionRules'], 'decision', { fields: [['question', ['decision', 'statement'], null]], branches: true }),
+    branchConditions: normalizeTypedArray(obj, 'branchConditions', ['branches', 'conditions', 'guards'], 'branch-condition', { fields: [['expression', ['condition', 'guard', 'when'], null], ['outcome', ['result', 'then'], null], ['elseOutcome', ['otherwise', 'else'], null]] }),
+    lifecycles: normalizeTypedArray(obj, 'lifecycles', ['lifeCycles', 'stateMachines', 'stateLifecycles'], 'lifecycle', { arrays: [['states', ['statuses']], ['transitions', ['stateTransitions']]], branches: true }),
+    invariants: normalizeTypedArray(obj, 'invariants', ['domainInvariants', 'constraints'], 'invariant', { fields: [['scope', ['appliesTo'], null], ['violationOutcome', ['failureOutcome'], null]] }),
+    useCases: normalizeTypedArray(obj, 'useCases', ['usecases', 'scenarios', 'businessScenarios'], 'use-case', { fields: [['actor', ['primaryActor'], null], ['trigger', ['precondition'], null], ['outcome', ['postcondition'], null]], steps: true, branches: true }),
+    unknowns: normalizeTypedArray(obj, 'unknowns', ['openQuestions', 'unresolved', 'gaps', 'uncertainties'], 'unknown'),
     metadata: obj.metadata ?? {}
   };
 }
 function normalizeFlowsObject(input = {}) {
   const obj = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  const make = (key, aliases, kind) => normalizeTypedArray(obj, key, aliases, kind, { fields: [['trigger', ['start', 'initiator'], null], ['outcome', ['result', 'end'], null]], arrays: [['failurePaths', ['errors', 'exceptions']], ['trustBoundaries', ['boundaries']], ['protocols', ['protocol']]], steps: true, branches: true });
   const result = {
     schemaVersion: '1.0', generatedAt: obj.generatedAt ?? obj.createdAt ?? obj.updatedAt ?? obj.timestamp ?? now(),
-    businessFlows: canonicalArray(obj, 'businessFlows', ['businessProcesses', 'businessWorkflows']),
-    controlFlows: canonicalArray(obj, 'controlFlows', ['executionFlows', 'codeFlows', 'callFlows']),
-    requestFlows: canonicalArray(obj, 'requestFlows', ['httpFlows', 'apiFlows', 'inboundFlows']),
-    trafficFlows: canonicalArray(obj, 'trafficFlows', ['networkFlows', 'runtimeTrafficFlows']),
-    dataFlows: canonicalArray(obj, 'dataFlows', ['dataPipelines', 'informationFlows']),
-    eventFlows: canonicalArray(obj, 'eventFlows', ['messageFlows', 'messagingFlows', 'asyncFlows']),
+    businessFlows: make('businessFlows', ['businessProcesses', 'businessWorkflows'], 'business-flow'),
+    controlFlows: make('controlFlows', ['executionFlows', 'codeFlows', 'callFlows'], 'control-flow'),
+    requestFlows: make('requestFlows', ['httpFlows', 'apiFlows', 'inboundFlows'], 'request-flow'),
+    trafficFlows: make('trafficFlows', ['networkFlows', 'runtimeTrafficFlows'], 'traffic-flow'),
+    dataFlows: make('dataFlows', ['dataPipelines', 'informationFlows'], 'data-flow'),
+    eventFlows: make('eventFlows', ['messageFlows', 'messagingFlows', 'asyncFlows'], 'event-flow'),
     metadata: obj.metadata ?? {}
   };
   const generic = arrayValue(obj, ['flows'], []);
   for (const flow of generic) {
     const type = String(flow?.type ?? flow?.kind ?? flow?.category ?? '').toLowerCase();
-    if (/business/.test(type)) result.businessFlows.push(flow);
-    else if (/control|execution|call/.test(type)) result.controlFlows.push(flow);
-    else if (/request|http|api/.test(type)) result.requestFlows.push(flow);
-    else if (/traffic|network|runtime/.test(type)) result.trafficFlows.push(flow);
-    else if (/data|information/.test(type)) result.dataFlows.push(flow);
-    else if (/event|message|async|kafka|rabbit/.test(type)) result.eventFlows.push(flow);
+    let key = null, kind = null;
+    if (/business/.test(type)) [key, kind] = ['businessFlows', 'business-flow'];
+    else if (/control|execution|call/.test(type)) [key, kind] = ['controlFlows', 'control-flow'];
+    else if (/request|http|api/.test(type)) [key, kind] = ['requestFlows', 'request-flow'];
+    else if (/traffic|network|runtime/.test(type)) [key, kind] = ['trafficFlows', 'traffic-flow'];
+    else if (/data|information/.test(type)) [key, kind] = ['dataFlows', 'data-flow'];
+    else if (/event|message|async|kafka|rabbit/.test(type)) [key, kind] = ['eventFlows', 'event-flow'];
+    if (key) result[key].push(normalizeTypedArray({ x: [flow] }, 'x', [], kind, { fields: [['trigger', ['start', 'initiator'], null], ['outcome', ['result', 'end'], null]], arrays: [['failurePaths', ['errors', 'exceptions']], ['trustBoundaries', ['boundaries']], ['protocols', ['protocol']]], steps: true, branches: true })[0]);
   }
-  for (const key of ['businessFlows','controlFlows','requestFlows','trafficFlows','dataFlows','eventFlows']) result[key] = uniqueArray(result[key]);
   return result;
 }
 function normalizeCatalogsObject(input = {}) {
   const obj = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
   return {
     schemaVersion: '1.0', generatedAt: obj.generatedAt ?? obj.createdAt ?? obj.updatedAt ?? obj.timestamp ?? now(),
-    endpoints: canonicalArray(obj, 'endpoints', ['apis', 'routes', 'httpEndpoints', 'apiEndpoints', 'restEndpoints', 'grpcEndpoints', 'websocketEndpoints', 'sseEndpoints']),
-    messageHandlers: canonicalArray(obj, 'messageHandlers', ['handlers', 'consumers', 'listeners', 'producers', 'messageConsumers', 'messageProducers', 'publishers', 'kafkaHandlers', 'rabbitHandlers', 'queueHandlers', 'streamHandlers']),
-    externalDependencies: canonicalArray(obj, 'externalDependencies', ['dependencies', 'integrations', 'externalServices', 'cloudServices', 'services', 'internalServices', 'upstreamServices', 'downstreamServices', 'thirdPartyServices', 'cloudResources']),
-    dataStores: canonicalArray(obj, 'dataStores', ['datastores', 'databases', 'storage', 'stores', 'caches']),
-    scheduledJobs: canonicalArray(obj, 'scheduledJobs', ['jobs', 'schedulers', 'cronJobs', 'scheduledTasks']),
+    endpoints: normalizeTypedArray(obj, 'endpoints', ['apis', 'routes', 'httpEndpoints', 'apiEndpoints', 'restEndpoints', 'grpcEndpoints', 'websocketEndpoints', 'sseEndpoints'], 'endpoint', { fields: [['protocol', ['transport'], 'HTTP'], ['method', ['httpMethod', 'verb'], null], ['path', ['route', 'uri'], null], ['handler', ['operation', 'symbol'], null], ['authentication', ['authn'], null], ['authorization', ['authz'], null]], arrays: [['statusCodes', ['responses']], ['validations', ['validation']], ['sideEffects', ['effects']], ['emittedEvents', ['events']]] }),
+    messageHandlers: normalizeTypedArray(obj, 'messageHandlers', ['handlers', 'consumers', 'listeners', 'producers', 'messageConsumers', 'messageProducers', 'publishers', 'kafkaHandlers', 'rabbitHandlers', 'queueHandlers', 'streamHandlers'], 'message-handler', { fields: [['role', ['direction', 'type'], null], ['technology', ['broker'], null], ['channel', ['topic', 'queue', 'exchange', 'stream'], null], ['handler', ['symbol', 'method'], null], ['deliverySemantics', ['delivery'], null]], arrays: [['retry', ['retries']], ['deadLetter', ['dlq', 'deadLetterQueue']], ['sideEffects', ['effects']]] }),
+    externalDependencies: normalizeTypedArray(obj, 'externalDependencies', ['dependencies', 'integrations', 'externalServices', 'cloudServices', 'services', 'internalServices', 'upstreamServices', 'downstreamServices', 'thirdPartyServices', 'cloudResources'], 'external-dependency', { fields: [['direction', ['relationship'], null], ['protocol', ['mechanism', 'transport'], null], ['authentication', ['auth'], null], ['criticality', ['importance'], null]], arrays: [['dataExchanged', ['data']], ['failureBehavior', ['failures']], ['callSites', ['sources']]] }),
+    dataStores: normalizeTypedArray(obj, 'dataStores', ['datastores', 'databases', 'storage', 'stores', 'caches'], 'data-store', { fields: [['technology', ['engine', 'type'], null], ['ownership', ['owner'], null], ['consistency', ['consistencyModel'], null]], arrays: [['entities', ['tables', 'collections']], ['accessPaths', ['clients', 'repositories']]] }),
+    scheduledJobs: normalizeTypedArray(obj, 'scheduledJobs', ['jobs', 'schedulers', 'cronJobs', 'scheduledTasks'], 'scheduled-job', { fields: [['schedule', ['cron', 'interval'], null], ['handler', ['symbol', 'method'], null], ['purpose', ['description'], null]], arrays: [['sideEffects', ['effects']], ['failureBehavior', ['failures']]] }),
     metadata: obj.metadata ?? {}
   };
 }
@@ -495,12 +593,15 @@ function normalizeUpdatePlanObject(input = {}, changedPaths = []) {
 function normalizeAuditReportObject(input = {}, page, options = {}) {
   const obj = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
   const findings = canonicalArray(obj, 'findings', ['issues', 'problems', 'results', 'violations']).map((f, i) => {
-    if (typeof f === 'string') return { id: `finding-${i + 1}`, severity: 'medium', summary: f };
+    if (typeof f === 'string') return { id: `finding-${i + 1}`, kind: 'audit-finding', severity: 'medium', summary: f, evidence: [] };
     const item = f && typeof f === 'object' ? { ...f } : { summary: String(f) };
-    item.id ??= item.code ?? `finding-${i + 1}`;
+    item.id = slug(item.id ?? item.code ?? `finding-${i + 1}`);
+    item.kind = 'audit-finding';
     item.severity = String(item.severity ?? item.level ?? item.priority ?? 'medium').toLowerCase();
     if (!['critical', 'high', 'medium', 'low'].includes(item.severity)) item.severity = 'medium';
     item.summary ??= item.message ?? item.description ?? item.title ?? 'Unspecified finding';
+    item.evidence = normalizeEvidenceRefs(canonicalArray(item, 'evidence', ['sources', 'references']));
+    item.claimIds = normalizeStringRefs(canonicalArray(item, 'claimIds', ['claims']));
     delete item.level; delete item.priority; delete item.message;
     return item;
   });
@@ -519,6 +620,121 @@ function assertCanonicalModel(name, obj, arrayKeys) {
   if (obj.schemaVersion !== '1.0') throw new Error(`${name} schemaVersion must normalize to 1.0.`);
   for (const key of arrayKeys) if (!Array.isArray(obj[key])) throw new Error(`${name}.${key} must be an array after normalization.`);
   return obj;
+}
+function assertTypedItems(name, items, expectedKind) {
+  const ids = new Set();
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]; const p = `${name}[${i}]`;
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error(`${p} must be an object.`);
+    if (!item.id || typeof item.id !== 'string') throw new Error(`${p}.id must be a non-empty string.`);
+    if (ids.has(item.id)) throw new Error(`${name} contains duplicate id: ${item.id}`); ids.add(item.id);
+    if (item.kind !== expectedKind) throw new Error(`${p}.kind must be ${expectedKind}.`);
+    if (!['FACT', 'INFERENCE', 'UNKNOWN'].includes(item.classification)) throw new Error(`${p}.classification must be FACT, INFERENCE, or UNKNOWN.`);
+    if (!Number.isFinite(item.confidence) || item.confidence < 0 || item.confidence > 1) throw new Error(`${p}.confidence must be between 0 and 1.`);
+    if (!Array.isArray(item.evidence) || !Array.isArray(item.sourceModelRefs) || !Array.isArray(item.unknowns)) throw new Error(`${p} evidence/sourceModelRefs/unknowns must be arrays.`);
+    if (item.classification === 'FACT' && item.evidence.length === 0) throw new Error(`${p} is FACT but has no direct evidence.`);
+    const aliases = buildReferenceAliases();
+    for (const [j, ev] of item.evidence.entries()) {
+      if (!ev || typeof ev !== 'object' || (!ev.path && !ev.symbol)) throw new Error(`${p}.evidence[${j}] requires path or symbol.`);
+      if (ev.path && path.isAbsolute(ev.path)) throw new Error(`${p}.evidence[${j}].path must be repository-relative.`);
+      if (ev.path) { const resolved = normalizeReference(ev.path, aliases); if (!exists(resolved)) throw new Error(`${p}.evidence[${j}] cannot resolve: ${ev.path}`); }
+    }
+  }
+}
+function assertGlobalUniqueIds(name, groups) {
+  const seen=new Map(); for(const [group,items] of Object.entries(groups)) for(const item of items){ if(seen.has(item.id)) throw new Error(`${name} duplicate semantic id ${item.id} in ${seen.get(item.id)} and ${group}`); seen.set(item.id,group); }
+}
+function assertSystemModel(obj) {
+  assertCanonicalModel('system.json', obj, ['components', 'relationships', 'workflows', 'unknowns']);
+  assertTypedItems('system.components', obj.components, 'component'); assertTypedItems('system.relationships', obj.relationships, 'relationship'); assertTypedItems('system.workflows', obj.workflows, 'workflow'); assertTypedItems('system.unknowns', obj.unknowns, 'unknown'); assertGlobalUniqueIds('system.json',{components:obj.components,relationships:obj.relationships,workflows:obj.workflows,unknowns:obj.unknowns}); return obj;
+}
+function assertBusinessModel(obj) {
+  assertCanonicalModel('business.json', obj, ['actors','capabilities','concepts','businessRules','decisions','branchConditions','lifecycles','invariants','useCases','unknowns']);
+  for (const [key, kind] of Object.entries({actors:'actor',capabilities:'capability',concepts:'concept',businessRules:'business-rule',decisions:'decision',branchConditions:'branch-condition',lifecycles:'lifecycle',invariants:'invariant',useCases:'use-case',unknowns:'unknown'})) assertTypedItems(`business.${key}`, obj[key], kind); assertGlobalUniqueIds('business.json',{actors:obj.actors,capabilities:obj.capabilities,concepts:obj.concepts,businessRules:obj.businessRules,decisions:obj.decisions,branchConditions:obj.branchConditions,lifecycles:obj.lifecycles,invariants:obj.invariants,useCases:obj.useCases,unknowns:obj.unknowns}); return obj;
+}
+function assertFlowsModel(obj) {
+  assertCanonicalModel('flows.json', obj, ['businessFlows','controlFlows','requestFlows','trafficFlows','dataFlows','eventFlows']);
+  for (const [key, kind] of Object.entries({businessFlows:'business-flow',controlFlows:'control-flow',requestFlows:'request-flow',trafficFlows:'traffic-flow',dataFlows:'data-flow',eventFlows:'event-flow'})) assertTypedItems(`flows.${key}`, obj[key], kind); assertGlobalUniqueIds('flows.json',{businessFlows:obj.businessFlows,controlFlows:obj.controlFlows,requestFlows:obj.requestFlows,trafficFlows:obj.trafficFlows,dataFlows:obj.dataFlows,eventFlows:obj.eventFlows}); return obj;
+}
+function assertCatalogsModel(obj) {
+  assertCanonicalModel('catalogs.json', obj, ['endpoints','messageHandlers','externalDependencies','dataStores','scheduledJobs']);
+  for (const [key, kind] of Object.entries({endpoints:'endpoint',messageHandlers:'message-handler',externalDependencies:'external-dependency',dataStores:'data-store',scheduledJobs:'scheduled-job'})) assertTypedItems(`catalogs.${key}`, obj[key], kind); assertGlobalUniqueIds('catalogs.json',{endpoints:obj.endpoints,messageHandlers:obj.messageHandlers,externalDependencies:obj.externalDependencies,dataStores:obj.dataStores,scheduledJobs:obj.scheduledJobs}); return obj;
+}
+function gitValue(args) {
+  const r = spawnSync('git', args, { cwd: root, encoding: 'utf8', shell: process.platform === 'win32' });
+  return r.status === 0 ? String(r.stdout ?? '').trim() : null;
+}
+function currentSourceSnapshot(force = false) {
+  if (!force && sourceSnapshotCache) return { ...sourceSnapshotCache };
+  const commit = gitValue(['rev-parse', 'HEAD']);
+  const branch = gitValue(['rev-parse', '--abbrev-ref', 'HEAD']);
+  const dirtyOutput = gitValue(['status', '--porcelain']);
+  let sourceFingerprint = null;
+  try { sourceFingerprint = sha256Text(JSON.stringify(makeSnapshot().files)); } catch {}
+  sourceSnapshotCache = { capturedAt: now(), commit, branch, dirty: dirtyOutput === null ? null : dirtyOutput.length > 0, sourceFingerprint };
+  return { ...sourceSnapshotCache };
+}
+function traceabilityPath(page) { return path.join(traceabilityPagesRoot, `${page.id}.json`); }
+function traceabilityRelPath(page) { return rel(traceabilityPath(page)); }
+function normalizeClaim(value, page, index = 0) {
+  const obj = typeof value === 'string' ? { statement: value } : value && typeof value === 'object' ? value : { statement: String(value ?? '') };
+  const evidence = normalizeEvidenceRefs(canonicalArray(obj, 'evidence', ['sources', 'references', 'sourceRefs']));
+  const modelRefs = normalizeStringRefs(canonicalArray(obj, 'sourceModelRefs', ['modelRefs', 'semanticRefs', 'catalogRefs']));
+  const classification = normalizeClassification(scalarValue(obj, ['classification', 'epistemicStatus', 'status'], null), evidence);
+  return {
+    id: slug(scalarValue(obj, ['id', 'claimId', 'key'], `${page.id}-claim-${index + 1}`)),
+    kind: 'claim',
+    pageId: page.id,
+    section: String(scalarValue(obj, ['section', 'heading'], 'Unmapped')),
+    statement: String(scalarValue(obj, ['statement', 'claim', 'text', 'summary'], 'Unspecified claim')),
+    classification,
+    confidence: normalizeConfidence(scalarValue(obj, ['confidence', 'score'], null), classification),
+    subject: scalarValue(obj, ['subject', 'entity'], null),
+    predicate: scalarValue(obj, ['predicate', 'property', 'relation'], null),
+    object: scalarValue(obj, ['object', 'value', 'target'], null),
+    polarity: String(scalarValue(obj, ['polarity'], 'positive')).toLowerCase() === 'negative' ? 'negative' : 'positive',
+    evidence,
+    sourceModelRefs: modelRefs,
+    intentionalDuplicate: Boolean(scalarValue(obj, ['intentionalDuplicate', 'repeatedForOrientation'], false)),
+    notes: scalarValue(obj, ['notes', 'note'], null),
+    unknowns: canonicalArray(obj, 'unknowns', ['gaps']).map(String),
+    tags: normalizeStringRefs(canonicalArray(obj, 'tags', ['labels']))
+  };
+}
+function normalizeTraceabilityObject(input = {}, page, options = {}) {
+  const obj = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  const coverageObj = obj.coverage && typeof obj.coverage === 'object' ? obj.coverage : {};
+  return {
+    schemaVersion: '1.0', generatedAt: scalarValue(obj, ['generatedAt', 'createdAt', 'updatedAt'], now()),
+    pageId: page.id, pagePath: page.path,
+    pageHash: scalarValue(obj, ['pageHash', 'hash'], options.defaultHashes ? pageCurrentHash(page) : null),
+    inputHash: scalarValue(obj, ['inputHash', 'pageInputHash'], options.defaultHashes ? pageInputHash(page) : null),
+    sourceSnapshot: obj.sourceSnapshot && typeof obj.sourceSnapshot === 'object' ? { ...currentSourceSnapshot(), ...obj.sourceSnapshot } : currentSourceSnapshot(),
+    claims: canonicalArray(obj, 'claims', ['statements', 'assertions', 'facts']).map((x, i) => normalizeClaim(x, page, i)),
+    coverage: {
+      evidenceRefsUsed: normalizeStringRefs(canonicalArray(coverageObj, 'evidenceRefsUsed', ['evidence', 'sources'])),
+      modelItemRefs: normalizeStringRefs(canonicalArray(coverageObj, 'modelItemRefs', ['modelRefs', 'semanticRefs'])),
+      catalogItemRefs: normalizeStringRefs(canonicalArray(coverageObj, 'catalogItemRefs', ['catalogRefs'])),
+      branchItemRefs: normalizeStringRefs(canonicalArray(coverageObj, 'branchItemRefs', ['branchRefs']))
+    },
+    unknowns: canonicalArray(obj, 'unknowns', ['openQuestions', 'gaps']).map(String),
+    legacyUnmapped: Boolean(obj.legacyUnmapped)
+  };
+}
+function assertTraceabilityObject(obj, page) {
+  if (obj.schemaVersion !== '1.0' || obj.pageId !== page.id || obj.pagePath !== page.path) throw new Error(`Traceability identity mismatch for ${page.id}.`);
+  if (!Array.isArray(obj.claims) || !obj.coverage || typeof obj.coverage !== 'object') throw new Error(`Traceability for ${page.id} requires claims[] and coverage.`);
+  assertTypedItems(`traceability.${page.id}.claims`, obj.claims, 'claim');
+  for (const claim of obj.claims) if (claim.pageId !== page.id) throw new Error(`Traceability claim ${claim.id} pageId mismatch.`);
+  return obj;
+}
+function ensurePageTraceability(page, options = {}) {
+  const file = traceabilityPath(page);
+  if (!fs.existsSync(file)) writeJson(file, normalizeTraceabilityObject({ legacyUnmapped: true, claims: [], coverage: {} }, page, { defaultHashes: true }));
+  return normalizeJsonFile(file, (obj) => normalizeTraceabilityObject(obj, page, { defaultHashes: true }), (obj) => assertTraceabilityObject(obj, page));
+}
+function pageRuntimeContract(page) {
+  return { ...page, traceabilityPath: traceabilityRelPath(page), traceabilityContract: { required: true, claimClassifications: ['FACT','INFERENCE','UNKNOWN'], evidenceRequiredForFacts: true }, sourceSnapshot: currentSourceSnapshot() };
 }
 function snapshotOutputs(paths) {
   const files = new Map();
@@ -819,6 +1035,7 @@ function manifestCoverageGaps(manifest) {
   const tags = new Set((manifest.pages ?? []).flatMap((p) => p.coverageTags ?? []));
   // Normalize in memory as well as at stage commit boundaries. This keeps manual
   // preflight/validate resilient when a repository still contains pre-v0.6 aliases.
+  const system = normalizeSystemObject(loadOptionalJson(systemPath, {}));
   const business = normalizeBusinessObject(loadOptionalJson(businessPath, {}));
   const flows = normalizeFlowsObject(loadOptionalJson(flowsPath, {}));
   const catalogs = normalizeCatalogsObject(loadOptionalJson(catalogsPath, {}));
@@ -910,10 +1127,10 @@ function validateStatic() {
   validateSkills(errors);
   const requiredAgents = ['doc-discoverer', 'doc-architect', 'doc-domain-analyst', 'doc-planner', 'doc-writer', 'doc-auditor'];
   for (const a of requiredAgents) if (!fs.existsSync(path.join(commandCodeHome, 'agents', `${a}.md`))) errors.push(`Missing global agent: ${a}`);
-  const requiredCommands = ['docgen-init', 'docgen-doctor', 'docgen-discover', 'docgen-analyze', 'docgen-plan', 'docgen-generate', 'docgen-audit', 'docgen-fix', 'docgen-update', 'docgen-status', 'docgen-enrich', 'docgen-quality', 'docgen-semantics', 'docgen-preflight', 'docgen-resume', 'docgen-contract-test'];
+  const requiredCommands = ['docgen-init', 'docgen-doctor', 'docgen-discover', 'docgen-analyze', 'docgen-plan', 'docgen-generate', 'docgen-audit', 'docgen-fix', 'docgen-update', 'docgen-status', 'docgen-enrich', 'docgen-quality', 'docgen-semantics', 'docgen-preflight', 'docgen-resume', 'docgen-contract-test', 'docgen-traceability'];
   for (const c of requiredCommands) if (!fs.existsSync(path.join(commandCodeHome, 'commands', `${c}.md`))) errors.push(`Missing global command: ${c}`);
   for (const prompt of ['discover.md', 'analyze.md', 'semantics.md', 'plan.md', 'generate.md', 'enrich.md', 'audit.md', 'fix.md', 'update-impact.md', 'generate-batch.md', 'enrich-batch.md', 'audit-batch.md']) if (!fs.existsSync(assetFile('prompts', prompt))) errors.push(`Missing prompt: ${prompt}`);
-  for (const schema of ['evidence-artifact.schema.json', 'evidence-index.schema.json', 'component.schema.json', 'workflow.schema.json', 'system.schema.json', 'business.schema.json', 'flows.schema.json', 'catalogs.schema.json', 'manifest.schema.json', 'audit-page.schema.json', 'audit-index.schema.json', 'update-plan.schema.json']) {
+  for (const schema of ['evidence-artifact.schema.json', 'evidence-index.schema.json', 'component.schema.json', 'workflow.schema.json', 'system.schema.json', 'business.schema.json', 'flows.schema.json', 'catalogs.schema.json', 'manifest.schema.json', 'audit-page.schema.json', 'audit-index.schema.json', 'update-plan.schema.json', 'semantic-item.schema.json', 'traceability.schema.json', 'quality-summary.schema.json']) {
     try { validateJsonFile(assetFile('schemas', schema)); } catch (e) { errors.push(e.message); }
   }
   if (errors.length) {
@@ -927,10 +1144,10 @@ function validateStatic() {
 function validateGenerated() {
   const errors = [];
   try { if (fs.existsSync(evidenceIndexPath)) normalizeEvidenceIndex(); } catch (e) { errors.push(e.message); }
-  try { if (fs.existsSync(systemPath)) normalizeJsonFile(systemPath, normalizeSystemObject, (obj) => assertCanonicalModel('system.json', obj, ['components', 'relationships', 'workflows', 'unknowns'])); } catch (e) { errors.push(e.message); }
-  try { if (fs.existsSync(businessPath)) normalizeJsonFile(businessPath, normalizeBusinessObject, (obj) => assertCanonicalModel('business.json', obj, ['actors', 'capabilities', 'concepts', 'businessRules', 'decisions', 'branchConditions', 'lifecycles', 'invariants', 'useCases', 'unknowns'])); } catch (e) { errors.push(e.message); }
-  try { if (fs.existsSync(flowsPath)) normalizeJsonFile(flowsPath, normalizeFlowsObject, (obj) => assertCanonicalModel('flows.json', obj, ['businessFlows', 'controlFlows', 'requestFlows', 'trafficFlows', 'dataFlows', 'eventFlows'])); } catch (e) { errors.push(e.message); }
-  try { if (fs.existsSync(catalogsPath)) normalizeJsonFile(catalogsPath, normalizeCatalogsObject, (obj) => assertCanonicalModel('catalogs.json', obj, ['endpoints', 'messageHandlers', 'externalDependencies', 'dataStores', 'scheduledJobs'])); } catch (e) { errors.push(e.message); }
+  try { if (fs.existsSync(systemPath)) normalizeJsonFile(systemPath, normalizeSystemObject, assertSystemModel); } catch (e) { errors.push(e.message); }
+  try { if (fs.existsSync(businessPath)) normalizeJsonFile(businessPath, normalizeBusinessObject, assertBusinessModel); } catch (e) { errors.push(e.message); }
+  try { if (fs.existsSync(flowsPath)) normalizeJsonFile(flowsPath, normalizeFlowsObject, assertFlowsModel); } catch (e) { errors.push(e.message); }
+  try { if (fs.existsSync(catalogsPath)) normalizeJsonFile(catalogsPath, normalizeCatalogsObject, assertCatalogsModel); } catch (e) { errors.push(e.message); }
   if (fs.existsSync(manifestPath)) {
     try {
       const manifest = normalizeManifest();
@@ -942,7 +1159,7 @@ function validateGenerated() {
         if (ids.has(page.id)) errors.push(`Duplicate page id: ${page.id}`); ids.add(page.id);
         if (paths.has(page.path)) errors.push(`Duplicate page path: ${page.path}`); paths.add(page.path);
         if (!page.path.startsWith('docs/') || !page.path.endsWith('.md')) errors.push(`Invalid page path: ${page.path}`);
-        if (fs.existsSync(path.join(root, page.path))) { try { validatePageFile(page); } catch (e) { errors.push(e.message); } }
+        if (fs.existsSync(path.join(root, page.path))) { try { validatePageFile(page); ensurePageTraceability(page); pageQualityReport(page); } catch (e) { errors.push(e.message); } }
       }
     } catch (e) { errors.push(e.message); }
   }
@@ -971,31 +1188,31 @@ async function doAnalyze(scope = 'all current evidence', progressLabel = '') {
   try {
     const system = await runContractStage('analyze', [systemPath],
       (reset) => runCommandCode('analyze', renderPrompt('analyze.md', { SCOPE: scope }), scope, progressLabel, { beforeRetry: reset }),
-      () => normalizeJsonFile(systemPath, normalizeSystemObject, (obj) => assertCanonicalModel('system.json', obj, ['components', 'relationships', 'workflows', 'unknowns'])));
+      () => normalizeJsonFile(systemPath, normalizeSystemObject, assertSystemModel));
     updateStage('analyze', 'completed', { scope, components: system.components.length, relationships: system.relationships.length, workflows: system.workflows.length });
   } catch (e) { updateStage('analyze', 'failed', { scope, error: e.message }); throw e; }
 }
 async function doSemantics(progressLabel = '') {
   if (!fs.existsSync(systemPath)) fail('Run analyze first.');
-  normalizeJsonFile(systemPath, normalizeSystemObject, (obj) => assertCanonicalModel('system.json', obj, ['components', 'relationships', 'workflows', 'unknowns']));
+  normalizeJsonFile(systemPath, normalizeSystemObject, assertSystemModel);
   updateStage('semantics', 'running');
   try {
     const [business, flows, catalogs] = await runContractStage('semantics', [businessPath, flowsPath, catalogsPath],
       (reset) => runCommandCode('semantics', renderPrompt('semantics.md'), '', progressLabel, { beforeRetry: reset }),
       () => [
-        normalizeJsonFile(businessPath, normalizeBusinessObject, (obj) => assertCanonicalModel('business.json', obj, ['actors', 'capabilities', 'concepts', 'businessRules', 'decisions', 'branchConditions', 'lifecycles', 'invariants', 'useCases', 'unknowns'])),
-        normalizeJsonFile(flowsPath, normalizeFlowsObject, (obj) => assertCanonicalModel('flows.json', obj, ['businessFlows', 'controlFlows', 'requestFlows', 'trafficFlows', 'dataFlows', 'eventFlows'])),
-        normalizeJsonFile(catalogsPath, normalizeCatalogsObject, (obj) => assertCanonicalModel('catalogs.json', obj, ['endpoints', 'messageHandlers', 'externalDependencies', 'dataStores', 'scheduledJobs']))
+        normalizeJsonFile(businessPath, normalizeBusinessObject, assertBusinessModel),
+        normalizeJsonFile(flowsPath, normalizeFlowsObject, assertFlowsModel),
+        normalizeJsonFile(catalogsPath, normalizeCatalogsObject, assertCatalogsModel)
       ]);
     updateStage('semantics', 'completed', { endpoints: catalogs.endpoints.length, messageHandlers: catalogs.messageHandlers.length, externalDependencies: catalogs.externalDependencies.length, businessRules: business.businessRules.length, flows: Object.values(flows).filter(Array.isArray).reduce((n, x) => n + x.length, 0) });
   } catch (e) { updateStage('semantics', 'failed', { error: e.message }); throw e; }
 }
 async function doPlan(progressLabel = '') {
   if (!fs.existsSync(systemPath)) fail('Run analyze first.');
-  normalizeJsonFile(systemPath, normalizeSystemObject, (obj) => assertCanonicalModel('system.json', obj, ['components', 'relationships', 'workflows', 'unknowns']));
-  if (fs.existsSync(businessPath)) normalizeJsonFile(businessPath, normalizeBusinessObject, (obj) => assertCanonicalModel('business.json', obj, ['actors', 'capabilities', 'concepts', 'businessRules', 'decisions', 'branchConditions', 'lifecycles', 'invariants', 'useCases', 'unknowns']));
-  if (fs.existsSync(flowsPath)) normalizeJsonFile(flowsPath, normalizeFlowsObject, (obj) => assertCanonicalModel('flows.json', obj, ['businessFlows', 'controlFlows', 'requestFlows', 'trafficFlows', 'dataFlows', 'eventFlows']));
-  if (fs.existsSync(catalogsPath)) normalizeJsonFile(catalogsPath, normalizeCatalogsObject, (obj) => assertCanonicalModel('catalogs.json', obj, ['endpoints', 'messageHandlers', 'externalDependencies', 'dataStores', 'scheduledJobs']));
+  normalizeJsonFile(systemPath, normalizeSystemObject, assertSystemModel);
+  if (fs.existsSync(businessPath)) normalizeJsonFile(businessPath, normalizeBusinessObject, assertBusinessModel);
+  if (fs.existsSync(flowsPath)) normalizeJsonFile(flowsPath, normalizeFlowsObject, assertFlowsModel);
+  if (fs.existsSync(catalogsPath)) normalizeJsonFile(catalogsPath, normalizeCatalogsObject, assertCatalogsModel);
   updateStage('plan', 'running');
   try {
     await runContractStage('plan', [manifestPath],
@@ -1067,7 +1284,7 @@ async function doGenerate(id, progressLabel = '', allowEnrich = true, force = fa
     console.log(`[docgen] SKIP generate:${id} — valid page already exists at ${page.path}`);
   } else {
     updatePageState(id, { generateStatus: 'running', targetPath: page.path });
-    await runCommandCode('generate', renderPrompt('generate.md', { PAGE_JSON: JSON.stringify(page, null, 2) }), id, progressLabel);
+    await runCommandCode('generate', renderPrompt('generate.md', { PAGE_JSON: JSON.stringify(pageRuntimeContract(page), null, 2) }), id, progressLabel);
     validatePageFile(page);
     updatePageState(id, { generateStatus: 'completed', generatedAt: now(), pageHash: pageCurrentHash(page), generateInputHash: pageInputHash(page), targetPath: page.path });
   }
@@ -1078,10 +1295,10 @@ async function doGenerateBatch(pages, progressLabel = '') {
   for (const p of pages.filter((p) => !pending.includes(p))) console.log(`[docgen] SKIP generate:${p.id} — valid page already exists.`);
   if (!pending.length) return;
   for (const p of pending) updatePageState(p.id, { generateStatus: 'running', targetPath: p.path });
-  await runCommandCode('generate', renderPrompt('generate-batch.md', { PAGES_JSON: JSON.stringify(pending, null, 2) }), pending.map((p) => p.id).join(','), progressLabel);
+  await runCommandCode('generate', renderPrompt('generate-batch.md', { PAGES_JSON: JSON.stringify(pending.map(pageRuntimeContract), null, 2) }), pending.map((p) => p.id).join(','), progressLabel);
   const failures = [];
   for (const page of pending) {
-    try { validatePageFile(page); updatePageState(page.id, { generateStatus: 'completed', generatedAt: now(), pageHash: pageCurrentHash(page), generateInputHash: pageInputHash(page), targetPath: page.path }); }
+    try { validatePageFile(page); ensurePageTraceability(page); updatePageState(page.id, { generateStatus: 'completed', generatedAt: now(), pageHash: pageCurrentHash(page), generateInputHash: pageInputHash(page), targetPath: page.path }); }
     catch (e) { failures.push({ page, error: e.message }); updatePageState(page.id, { generateStatus: 'failed', error: e.message }); }
   }
   if (failures.length) {
@@ -1089,28 +1306,94 @@ async function doGenerateBatch(pages, progressLabel = '') {
     for (const f of failures) await doGenerate(f.page.id, `individual fallback after batch`, false, true);
   }
   if (qualityConfig().autoEnrich !== false && isComprehensive()) {
-    const thin = pending.filter(pageNeedsEnrichment);
+    const thin = pages.filter(pageNeedsEnrichment);
     if (thin.length) await doEnrichBatch(thin, `${progressLabel} | quality-repair`);
   }
+}
+function normalizeRefKey(value) { return String(value ?? '').replaceAll('\\','/').replace(/^\.\//,'').toLowerCase(); }
+function itemRefsForPage(page) {
+  const system = normalizeSystemObject(loadOptionalJson(systemPath, {}));
+  const business = normalizeBusinessObject(loadOptionalJson(businessPath, {}));
+  const flows = normalizeFlowsObject(loadOptionalJson(flowsPath, {}));
+  const catalogs = normalizeCatalogsObject(loadOptionalJson(catalogsPath, {}));
+  const tags = new Set(page.coverageTags ?? []); const expected = { model: [], catalog: [], branch: [] };
+  const add = (target, items) => target.push(...(items ?? []).map((x) => x.id));
+  if (tags.has('system-overview') || tags.has('architecture')) add(expected.model, [...system.components, ...system.relationships, ...system.workflows]);
+  if (tags.has('business-domain')) add(expected.model, [...business.actors, ...business.capabilities, ...business.concepts]);
+  if (tags.has('business-rules')) add(expected.model, business.businessRules);
+  if (tags.has('branch-conditions')) { add(expected.model, business.branchConditions); add(expected.branch, business.branchConditions); }
+  if (tags.has('state-lifecycle')) add(expected.model, business.lifecycles);
+  for (const [tag, key] of [['business-flow','businessFlows'],['control-flow','controlFlows'],['request-flow','requestFlows'],['traffic-flow','trafficFlows'],['data-flow','dataFlows'],['event-flow','eventFlows']]) if (tags.has(tag)) { add(expected.model, flows[key]); for (const f of flows[key]) add(expected.branch, f.branches ?? []); }
+  if (tags.has('endpoint-catalog')) add(expected.catalog, catalogs.endpoints);
+  if (tags.has('message-handler-catalog')) add(expected.catalog, catalogs.messageHandlers);
+  if (tags.has('external-dependency-catalog')) add(expected.catalog, catalogs.externalDependencies);
+  return { model: [...new Set(expected.model)], catalog: [...new Set(expected.catalog)], branch: [...new Set(expected.branch)] };
+}
+function ratio(covered, expected) { return expected <= 0 ? 1 : Math.min(1, covered / expected); }
+function pageSemanticMetrics(page, text) {
+  const trace = ensurePageTraceability(page);
+  const claims = trace.claims ?? [];
+  const knownIds = new Set();
+  for (const model of [normalizeSystemObject(loadOptionalJson(systemPath, {})), normalizeBusinessObject(loadOptionalJson(businessPath, {})), normalizeFlowsObject(loadOptionalJson(flowsPath, {})), normalizeCatalogsObject(loadOptionalJson(catalogsPath, {}))]) for (const value of Object.values(model)) if (Array.isArray(value)) for (const item of value) if (item?.id) knownIds.add(normalizeRefKey(item.id));
+  const aliases = buildReferenceAliases();
+  const evidenceValid = (ev) => { const ref=normalizeRefKey(ev?.path); if(!ref) return Boolean(ev?.symbol); const resolved=normalizeReference(ref, aliases); if(!exists(resolved)) return false; if(ev?.startLine){ try{const lines=fs.readFileSync(path.join(root,resolved),'utf8').split(/\r?\n/).length; if(ev.startLine>lines || (ev.endLine&&ev.endLine>lines)) return false;}catch{return false;} } return true; };
+  const modelRefValid = (ref) => knownIds.has(normalizeRefKey(ref));
+  const groundable = claims.filter((c) => c.classification !== 'UNKNOWN');
+  const grounded = groundable.filter((c) => (c.evidence ?? []).some(evidenceValid) || (c.sourceModelRefs ?? []).some(modelRefValid));
+  const unsupported = groundable.filter((c) => !(c.evidence ?? []).some(evidenceValid) && !(c.sourceModelRefs ?? []).some(modelRefValid));
+  const aliasesForCoverage = buildReferenceAliases();
+  const resolveCoverageRef = (ref) => normalizeRefKey(normalizeReference(ref, aliasesForCoverage) ?? ref);
+  const declared = [...(page.evidence ?? [])].map(resolveCoverageRef);
+  const usedEvidence = new Set([...(trace.coverage?.evidenceRefsUsed ?? []), ...claims.flatMap((c) => (c.evidence ?? []).map((e) => e.path))].map(resolveCoverageRef));
+  const declaredCovered = declared.filter((d) => usedEvidence.has(d)).length;
+  const expected = itemRefsForPage(page);
+  const modelRefs = new Set([...(trace.coverage?.modelItemRefs ?? []), ...claims.flatMap((c) => c.sourceModelRefs ?? [])].map(normalizeRefKey));
+  const catalogRefs = new Set([...(trace.coverage?.catalogItemRefs ?? []), ...claims.flatMap((c) => c.sourceModelRefs ?? [])].map(normalizeRefKey));
+  const branchRefs = new Set([...(trace.coverage?.branchItemRefs ?? []), ...claims.flatMap((c) => c.sourceModelRefs ?? [])].map(normalizeRefKey));
+  const countCovered = (ids, refs) => ids.filter((id) => refs.has(normalizeRefKey(id))).length;
+  const words = pageWordCount(text);
+  return {
+    claimCount: claims.length, groundableClaimCount: groundable.length, groundedClaimCount: grounded.length, structuredClaimCount: claims.filter((c)=>c.subject&&c.predicate).length,
+    unsupportedClaims: unsupported.map((c) => c.id),
+    claimGroundingRatio: ratio(grounded.length, groundable.length),
+    structuredClaimRatio: ratio(claims.filter((c)=>c.subject&&c.predicate).length, claims.length),
+    evidenceCoverageRatio: ratio(declaredCovered, declared.length),
+    modelCoverageRatio: ratio(countCovered(expected.model, modelRefs), expected.model.length),
+    catalogCoverageRatio: ratio(countCovered(expected.catalog, catalogRefs), expected.catalog.length),
+    branchCoverageRatio: ratio(countCovered(expected.branch, branchRefs), expected.branch.length),
+    evidenceClaimDensityPer1000Words: words ? grounded.length / words * 1000 : 0,
+    traceabilityPath: traceabilityRelPath(page), legacyUnmapped: trace.legacyUnmapped,
+    stale: trace.pageHash !== pageCurrentHash(page) || trace.inputHash !== pageInputHash(page) || Boolean(trace.sourceSnapshot?.sourceFingerprint && currentSourceSnapshot().sourceFingerprint && trace.sourceSnapshot.sourceFingerprint !== currentSourceSnapshot().sourceFingerprint),
+    sourceStale: Boolean(trace.sourceSnapshot?.sourceFingerprint && currentSourceSnapshot().sourceFingerprint && trace.sourceSnapshot.sourceFingerprint !== currentSourceSnapshot().sourceFingerprint),
+    sourceSnapshot: trace.sourceSnapshot
+  };
 }
 function pageQualityReport(page) {
   const file = path.join(root, page.path);
   const text = fs.readFileSync(file, 'utf8');
-  const q = qualityConfig();
-  const words = pageWordCount(text);
-  const headings = headingNames(text);
-  const normalized = headings.map(normalizeHeading);
+  const q = qualityConfig(); const semanticQ = q.semanticMetrics ?? {};
+  const words = pageWordCount(text); const headings = headingNames(text); const normalized = headings.map(normalizeHeading);
   const requiredSections = page.requiredSections ?? [];
-  const missingSections = requiredSections.filter((s) => !normalized.some((h) => h.includes(normalizeHeading(s)) || normalizeHeading(s).includes(h)));
-  const diagramIntents = page.diagramIntents ?? [];
-  const mermaidCount = (text.match(/```mermaid\b/g) ?? []).length;
-  const minWords = q.minWordsByType?.[page.type] ?? 0;
-  const errors = [];
-  if (minWords && words < minWords) errors.push(`word count ${words} is below ${minWords} for ${page.type}`);
+  const missingSections = requiredSections.filter((x) => !normalized.some((h) => h.includes(normalizeHeading(x)) || normalizeHeading(x).includes(h)));
+  const diagramIntents = page.diagramIntents ?? []; const mermaidCount = (text.match(/```mermaid\b/g) ?? []).length;
+  const minWords = q.minWordsByType?.[page.type] ?? 0; const errors = []; const warnings = [];
+  if (minWords && words < minWords) warnings.push(`word count ${words} is below advisory target ${minWords} for ${page.type}`);
   if ((q.minHeadings ?? 0) && headings.length < q.minHeadings) errors.push(`heading count ${headings.length} is below ${q.minHeadings}`);
   if (q.requireDeclaredSections !== false && missingSections.length) errors.push(`missing required sections: ${missingSections.join(', ')}`);
-  if (q.requirePlannedDiagrams !== false && diagramIntents.length && mermaidCount < 1) errors.push(`manifest declares diagram intents but no Mermaid diagram exists`);
-  return { pageId: page.id, pagePath: page.path, type: page.type, words, headings: headings.length, minWords, requiredSections, missingSections, diagramIntents, mermaidCount, errors };
+  if (q.requirePlannedDiagrams !== false && diagramIntents.length && mermaidCount < 1) errors.push('manifest declares diagram intents but no Mermaid diagram exists');
+  const semantic = pageSemanticMetrics(page, text);
+  if (semantic.structuredClaimRatio < Number(semanticQ.minStructuredClaimRatio ?? 0.7)) errors.push(`structured claim ratio ${semantic.structuredClaimRatio.toFixed(2)} is below ${semanticQ.minStructuredClaimRatio ?? 0.7}`);
+  if (semantic.claimGroundingRatio < Number(semanticQ.minClaimGroundingRatio ?? 0.9)) errors.push(`claim grounding ratio ${semantic.claimGroundingRatio.toFixed(2)} is below ${semanticQ.minClaimGroundingRatio ?? 0.9}`);
+  if (semantic.evidenceCoverageRatio < Number(semanticQ.minEvidenceCoverageRatio ?? 0.8)) errors.push(`declared evidence coverage ratio ${semantic.evidenceCoverageRatio.toFixed(2)} is below ${semanticQ.minEvidenceCoverageRatio ?? 0.8}`);
+  if (semantic.modelCoverageRatio < Number(semanticQ.minModelCoverageRatio ?? 0.9)) errors.push(`model-item coverage ratio ${semantic.modelCoverageRatio.toFixed(2)} is below ${semanticQ.minModelCoverageRatio ?? 0.9}`);
+  if (semantic.catalogCoverageRatio < Number(semanticQ.minCatalogCoverageRatio ?? 1)) errors.push(`catalog coverage ratio ${semantic.catalogCoverageRatio.toFixed(2)} is below ${semanticQ.minCatalogCoverageRatio ?? 1}`);
+  if (semantic.branchCoverageRatio < Number(semanticQ.minBranchCoverageRatio ?? 0.9)) errors.push(`branch coverage ratio ${semantic.branchCoverageRatio.toFixed(2)} is below ${semanticQ.minBranchCoverageRatio ?? 0.9}`);
+  if (semantic.unsupportedClaims.length > Number(semanticQ.maxUnsupportedClaims ?? 0)) errors.push(`unsupported claims: ${semantic.unsupportedClaims.join(', ')}`);
+  if (semantic.stale) errors.push('traceability fingerprint is stale for current page/evidence/model inputs');
+  const requiredGroundedClaims = Math.max(1, Math.ceil(words / 1000 * Number(semanticQ.minEvidenceClaimsPer1000Words ?? 1.5)));
+  semantic.requiredGroundedClaims = requiredGroundedClaims;
+  if (semantic.groundedClaimCount < requiredGroundedClaims) errors.push(`grounded claim count ${semantic.groundedClaimCount} is below evidence-density requirement ${requiredGroundedClaims}`);
+  return { pageId: page.id, pagePath: page.path, type: page.type, words, headings: headings.length, minWords, requiredSections, missingSections, diagramIntents, mermaidCount, semantic, errors, warnings };
 }
 function validatePageQuality(page, hard = true) {
   const report = pageQualityReport(page);
@@ -1127,17 +1410,17 @@ async function doEnrich(id, progressLabel = '', force = false) {
   if (!force && state?.enrichedHash && state.enrichedHash === pageCurrentHash(page) && !pageNeedsEnrichment(page)) {
     console.log(`[docgen] SKIP enrich:${id} — current page already satisfies quality gates.`); return;
   }
-  await runCommandCode('enrich', renderPrompt('enrich.md', { PAGE_JSON: JSON.stringify(page, null, 2) }), id, progressLabel);
-  validatePageFile(page); validatePageQuality(page, false);
+  await runCommandCode('enrich', renderPrompt('enrich.md', { PAGE_JSON: JSON.stringify(pageRuntimeContract(page), null, 2) }), id, progressLabel);
+  validatePageFile(page); ensurePageTraceability(page); validatePageQuality(page, false);
   updatePageState(id, { enrichStatus: 'completed', enrichedAt: now(), enrichedHash: pageCurrentHash(page) });
 }
 async function doEnrichBatch(pages, progressLabel = '') {
   const pending = pages.filter(pageNeedsEnrichment);
   if (!pending.length) return;
-  await runCommandCode('enrich', renderPrompt('enrich-batch.md', { PAGES_JSON: JSON.stringify(pending, null, 2) }), pending.map((p) => p.id).join(','), progressLabel);
+  await runCommandCode('enrich', renderPrompt('enrich-batch.md', { PAGES_JSON: JSON.stringify(pending.map(pageRuntimeContract), null, 2) }), pending.map((p) => p.id).join(','), progressLabel);
   const failures = [];
   for (const page of pending) {
-    try { validatePageFile(page); validatePageQuality(page, false); updatePageState(page.id, { enrichStatus: 'completed', enrichedAt: now(), enrichedHash: pageCurrentHash(page) }); }
+    try { validatePageFile(page); ensurePageTraceability(page); validatePageQuality(page, false); updatePageState(page.id, { enrichStatus: 'completed', enrichedAt: now(), enrichedHash: pageCurrentHash(page) }); }
     catch (e) { failures.push(page); }
   }
   for (const page of failures) await doEnrich(page.id, 'individual fallback after enrich batch', true);
@@ -1151,35 +1434,57 @@ async function doEnrichAll() {
     await doEnrichBatch(batch, `batch ${Math.floor(i / size) + 1}/${Math.ceil(pages.length / size)}`);
   }
 }
+function claimSemanticKey(claim) {
+  if (claim.subject && claim.predicate) return `${normalizeHeading(claim.subject)}|${normalizeHeading(claim.predicate)}`;
+  return null;
+}
+function claimValueKey(claim) { return `${normalizeHeading(String(claim.object ?? ''))}|${claim.polarity}`; }
+function claimDuplicateKey(claim) {
+  if (claim.subject && claim.predicate) return `${claimSemanticKey(claim)}|${claimValueKey(claim)}`;
+  return normalizeHeading(claim.statement);
+}
+function rebuildTraceabilityIndex() {
+  if (!fs.existsSync(manifestPath)) return null;
+  const manifest = loadManifest(); const pages = []; const claims = [];
+  for (const page of manifest.pages) if (fs.existsSync(pageFile(page))) {
+    const trace = ensurePageTraceability(page); pages.push({ pageId: page.id, pagePath: page.path, traceabilityPath: traceabilityRelPath(page), pageHash: trace.pageHash, inputHash: trace.inputHash, claimCount: trace.claims.length, sourceSnapshot: trace.sourceSnapshot }); claims.push(...trace.claims);
+  }
+  const byDuplicate = new Map(); const bySemantic = new Map(); const claimIds=new Map(); const claimIdCollisions=[];
+  for (const claim of claims) {
+    if(claimIds.has(claim.id)) claimIdCollisions.push({id:claim.id,pages:[claimIds.get(claim.id),claim.pageId]}); else claimIds.set(claim.id,claim.pageId);
+    const dk = claimDuplicateKey(claim); if (dk) { if (!byDuplicate.has(dk)) byDuplicate.set(dk, []); byDuplicate.get(dk).push(claim); }
+    const sk = claimSemanticKey(claim); if (sk) { if (!bySemantic.has(sk)) bySemantic.set(sk, []); bySemantic.get(sk).push(claim); }
+  }
+  const duplicateGroups = [...byDuplicate.entries()].filter(([, group]) => group.filter((x) => !x.intentionalDuplicate).length > 1).map(([key, group], i) => ({ id: `duplicate-${i + 1}`, key, claims: group.map((x) => ({ id: x.id, pageId: x.pageId, statement: x.statement, intentionalDuplicate: x.intentionalDuplicate })) }));
+  const contradictions = [];
+  for (const [key, group] of bySemantic.entries()) {
+    const factual = group.filter((x) => x.classification !== 'UNKNOWN'); const values = new Set(factual.map(claimValueKey));
+    if (values.size > 1) contradictions.push({ id: `contradiction-${contradictions.length + 1}`, key, severity: factual.some((x) => x.classification === 'FACT') ? 'high' : 'medium', claims: factual.map((x) => ({ id: x.id, pageId: x.pageId, statement: x.statement, classification: x.classification, object: x.object, polarity: x.polarity })) });
+  }
+  const currentSource = currentSourceSnapshot(true);
+  const freshnessPages = pages.map((p) => ({ ...p, currentPageHash: fileSha256(path.join(root,p.pagePath)), currentInputHash: pageInputHash(findPage(p.pageId)), currentSourceSnapshot: currentSource, sourceStale: Boolean(p.sourceSnapshot?.sourceFingerprint && currentSource.sourceFingerprint && p.sourceSnapshot.sourceFingerprint !== currentSource.sourceFingerprint), stale: p.pageHash !== fileSha256(path.join(root,p.pagePath)) || p.inputHash !== pageInputHash(findPage(p.pageId)) || Boolean(p.sourceSnapshot?.sourceFingerprint && currentSource.sourceFingerprint && p.sourceSnapshot.sourceFingerprint !== currentSource.sourceFingerprint) }));
+  const index = { schemaVersion:'1.0', generatedAt:now(), sourceSnapshot:currentSourceSnapshot(), pages, claims, summary:{ pages:pages.length, claims:claims.length, groundedClaims:claims.filter((c)=>(c.evidence??[]).length||(c.sourceModelRefs??[]).length).length, duplicateGroups:duplicateGroups.length, contradictions:contradictions.length, claimIdCollisions:claimIdCollisions.length, stalePages:freshnessPages.filter((x)=>x.stale).length } };
+  index.claimIdCollisions=claimIdCollisions; writeJson(traceabilityIndexPath,index); writeJson(duplicatesPath,{schemaVersion:'1.0',generatedAt:now(),groups:duplicateGroups}); writeJson(contradictionsPath,{schemaVersion:'1.0',generatedAt:now(),contradictions}); writeJson(freshnessPath,{schemaVersion:'1.0',generatedAt:now(),sourceSnapshot:index.sourceSnapshot,pages:freshnessPages}); return {index,duplicateGroups,contradictions,claimIdCollisions,freshnessPages};
+}
 function writeQualitySummary() {
   if (!fs.existsSync(manifestPath)) return null;
-  const manifest = loadManifest();
-  const pages = [];
-  for (const page of manifest.pages) if (fs.existsSync(path.join(root, page.path))) pages.push(pageQualityReport(page));
-  const audit = fs.existsSync(auditIndexPath) ? readJson(auditIndexPath) : { summary: {} };
-  const summary = {
-    schemaVersion: '1.0', generatedAt: now(), qualityProfile: qualityProfile(),
-    pages, localGateFailures: pages.filter((p) => p.errors.length).length,
-    auditSummary: audit.summary ?? {}
-  };
-  writeJson(path.join(root, '.docgen', 'audit', 'quality-summary.json'), summary);
-  return summary;
+  const manifest = loadManifest(); const pages = [];
+  for (const page of manifest.pages) if (fs.existsSync(path.join(root,page.path))) pages.push(pageQualityReport(page));
+  const audit = fs.existsSync(auditIndexPath) ? readJson(auditIndexPath) : {summary:{}}; const trace = rebuildTraceabilityIndex();
+  const totals = pages.reduce((a,p)=>{ a.claims+=p.semantic.claimCount; a.groundable+=p.semantic.groundableClaimCount; a.grounded+=p.semantic.groundedClaimCount; a.unsupported+=p.semantic.unsupportedClaims.length; a.stale+=p.semantic.stale?1:0; return a; },{claims:0,groundable:0,grounded:0,unsupported:0,stale:0});
+  const summary = { schemaVersion:'1.0', generatedAt:now(), qualityProfile:qualityProfile(), sourceSnapshot:currentSourceSnapshot(), pages, localGateFailures:pages.filter((p)=>p.errors.length).length, warningCount:pages.reduce((n,p)=>n+p.warnings.length,0), semanticSummary:{...totals,claimGroundingRatio:ratio(totals.grounded,totals.groundable),contradictions:trace?.contradictions.length??0,duplicateGroups:trace?.duplicateGroups.length??0,claimIdCollisions:trace?.claimIdCollisions.length??0,stalePages:trace?.freshnessPages.filter((x)=>x.stale).length??0}, auditSummary:audit.summary??{} };
+  writeJson(path.join(root,'.docgen','audit','quality-summary.json'),summary); return summary;
+}
+function doTraceability() {
+  const result = rebuildTraceabilityIndex(); if (!result) fail('Missing manifest. Run plan first.');
+  console.log(`Traceability pages: ${result.index.pages.length}`); console.log(`Claims: ${result.index.claims.length}`); console.log(`Contradictions: ${result.contradictions.length}`); console.log(`Duplicate claim groups: ${result.duplicateGroups.length}`); console.log(`Claim ID collisions: ${result.claimIdCollisions.length}`); console.log(`Stale pages: ${result.freshnessPages.filter((x)=>x.stale).length}`); console.log(`Index: ${rel(traceabilityIndexPath)}`);
 }
 function doQuality() {
-  const summary = writeQualitySummary();
-  if (!summary) fail('Missing manifest. Run plan first.');
-  for (const p of summary.pages) {
-    const mark = p.errors.length ? 'FAIL' : 'PASS';
-    console.log(`${mark.padEnd(4)} ${p.pageId.padEnd(32)} ${String(p.words).padStart(5)} words | ${p.headings} headings | ${p.mermaidCount} mermaid`);
-    for (const e of p.errors) console.log(`     - ${e}`);
-  }
-  const q = qualityConfig(); const a = summary.auditSummary;
-  const failed = summary.localGateFailures > 0 || (a.critical ?? 0) > (q.maxCriticalFindings ?? 0) || (a.high ?? 0) > (q.maxHighFindings ?? 0);
-  console.log(`Quality profile: ${summary.qualityProfile}`);
-  console.log(`Local gate failures: ${summary.localGateFailures}`);
-  console.log(`Audit findings: ${JSON.stringify(a)}`);
-  console.log(`Quality gate: ${failed ? 'FAIL' : 'PASS'}`);
-  if (failed) process.exitCode = 1;
+  const summary = writeQualitySummary(); if (!summary) fail('Missing manifest. Run plan first.');
+  for (const p of summary.pages) { const mark=p.errors.length?'FAIL':'PASS'; console.log(`${mark.padEnd(4)} ${p.pageId.padEnd(32)} grounding ${(p.semantic.claimGroundingRatio*100).toFixed(0).padStart(3)}% | evidence ${(p.semantic.evidenceCoverageRatio*100).toFixed(0).padStart(3)}% | model ${(p.semantic.modelCoverageRatio*100).toFixed(0).padStart(3)}% | catalog ${(p.semantic.catalogCoverageRatio*100).toFixed(0).padStart(3)}% | ${p.words} words`); for(const e of p.errors) console.log(`     - ERROR: ${e}`); for(const w of p.warnings) console.log(`     - WARN: ${w}`); }
+  const q=qualityConfig(), sq=q.semanticMetrics??{}, a=summary.auditSummary, s=summary.semanticSummary;
+  const failed=summary.localGateFailures>0||(a.critical??0)>(q.maxCriticalFindings??0)||(a.high??0)>(q.maxHighFindings??0)||s.contradictions>Number(sq.maxContradictions??0)||s.claimIdCollisions>Number(sq.maxClaimIdCollisions??0)||s.stalePages>Number(sq.maxStalePages??0);
+  console.log(`Quality profile: ${summary.qualityProfile}`); console.log(`Local gate failures: ${summary.localGateFailures}`); console.log(`Semantic summary: ${JSON.stringify(s)}`); console.log(`Audit findings: ${JSON.stringify(a)}`); console.log(`Quality gate: ${failed?'FAIL':'PASS'}`); if(failed) process.exitCode=1;
 }
 
 async function doGenerateAll(force = false) {
@@ -1213,7 +1518,7 @@ async function doAudit(id, progressLabel = '', force = false) {
   const page = findPage(id);
   if (!fs.existsSync(pageFile(page))) fail(`Generate page first: ${page.path}`);
   if (!force && auditIsCurrent(page)) { console.log(`[docgen] SKIP audit:${id} — current audit already matches page hash.`); return; }
-  await runCommandCode('audit', renderPrompt('audit.md', { PAGE_JSON: JSON.stringify(page, null, 2), PAGE_ID: page.id, PAGE_HASH: pageCurrentHash(page), PAGE_INPUT_HASH: pageInputHash(page) }), id, progressLabel);
+  await runCommandCode('audit', renderPrompt('audit.md', { PAGE_JSON: JSON.stringify(pageRuntimeContract(page), null, 2), PAGE_ID: page.id, PAGE_HASH: pageCurrentHash(page), PAGE_INPUT_HASH: pageInputHash(page) }), id, progressLabel);
   const reportPath = path.join(root, '.docgen', 'audit', 'pages', `${id}.json`);
   const report = normalizeJsonFile(reportPath, (obj) => normalizeAuditReportObject(obj, page, { defaultHashes: true }), (obj) => {
     assertCanonicalModel(`audit/${id}.json`, obj, ['findings']);
@@ -1228,7 +1533,7 @@ async function doAuditBatch(pages, progressLabel = '') {
   const pending = pages.filter((p) => !auditIsCurrent(p));
   for (const p of pages.filter((p) => !pending.includes(p))) console.log(`[docgen] SKIP audit:${p.id} — current audit exists.`);
   if (!pending.length) return;
-  await runCommandCode('audit', renderPrompt('audit-batch.md', { PAGES_JSON: JSON.stringify(pending.map((p) => ({ ...p, pageHash: pageCurrentHash(p), inputHash: pageInputHash(p) })), null, 2) }), pending.map((p) => p.id).join(','), progressLabel);
+  await runCommandCode('audit', renderPrompt('audit-batch.md', { PAGES_JSON: JSON.stringify(pending.map((p) => ({ ...pageRuntimeContract(p), pageHash: pageCurrentHash(p), inputHash: pageInputHash(p) })), null, 2) }), pending.map((p) => p.id).join(','), progressLabel);
   for (const page of pending) {
     const reportPath = path.join(root, '.docgen', 'audit', 'pages', `${page.id}.json`);
     try {
@@ -1284,8 +1589,8 @@ async function doFix(id, progressLabel = '') {
   const page = findPage(id);
   const audit = path.join(root, '.docgen', 'audit', 'pages', `${id}.json`);
   if (!fs.existsSync(audit)) fail(`Missing audit for ${id}. Run audit first.`);
-  await runCommandCode('fix', renderPrompt('fix.md', { PAGE_JSON: JSON.stringify(page, null, 2), PAGE_ID: id }), id, progressLabel);
-  validatePageFile(page);
+  await runCommandCode('fix', renderPrompt('fix.md', { PAGE_JSON: JSON.stringify(pageRuntimeContract(page), null, 2), PAGE_ID: id }), id, progressLabel);
+  validatePageFile(page); ensurePageTraceability(page);
   if (isComprehensive()) validatePageQuality(page, false);
 }
 async function doFixAll() {
@@ -1359,11 +1664,11 @@ async function doUpdate(explicitPaths) {
 
 function validateStageArtifact(stage) {
   if (stage === 'discover') return normalizeEvidenceIndex();
-  if (stage === 'analyze') return normalizeJsonFile(systemPath, normalizeSystemObject, (obj) => assertCanonicalModel('system.json', obj, ['components', 'relationships', 'workflows', 'unknowns']));
+  if (stage === 'analyze') return normalizeJsonFile(systemPath, normalizeSystemObject, assertSystemModel);
   if (stage === 'semantics') return [
-    normalizeJsonFile(businessPath, normalizeBusinessObject, (obj) => assertCanonicalModel('business.json', obj, ['actors', 'capabilities', 'concepts', 'businessRules', 'decisions', 'branchConditions', 'lifecycles', 'invariants', 'useCases', 'unknowns'])),
-    normalizeJsonFile(flowsPath, normalizeFlowsObject, (obj) => assertCanonicalModel('flows.json', obj, ['businessFlows', 'controlFlows', 'requestFlows', 'trafficFlows', 'dataFlows', 'eventFlows'])),
-    normalizeJsonFile(catalogsPath, normalizeCatalogsObject, (obj) => assertCanonicalModel('catalogs.json', obj, ['endpoints', 'messageHandlers', 'externalDependencies', 'dataStores', 'scheduledJobs']))
+    normalizeJsonFile(businessPath, normalizeBusinessObject, assertBusinessModel),
+    normalizeJsonFile(flowsPath, normalizeFlowsObject, assertFlowsModel),
+    normalizeJsonFile(catalogsPath, normalizeCatalogsObject, assertCatalogsModel)
   ];
   if (stage === 'plan') return requireManifestPreflight();
   return true;
@@ -1396,11 +1701,18 @@ function contractSelfTest() {
   });
   check('catalog losslessness', () => { const x = normalizeCatalogsObject({ consumers:[{id:'c'}], producers:[{id:'p'}], listeners:[{id:'l'}], kafkaHandlers:[{id:'k'}] }); if (x.messageHandlers.length < 3) throw new Error(`expected at least 3 handlers, got ${x.messageHandlers.length}`); });
   check('evidence path canonicalization', () => { const p = canonicalEvidencePath('repo.json', path.join(root,'.docgen','evidence')); if (p !== '.docgen/evidence/repo.json') throw new Error(p); });
+  check('typed semantic items', () => { const x=normalizeBusinessObject({rules:['Only DRAFT may submit']}); const r=x.businessRules[0]; if(r.kind!=='business-rule'||!r.id||!Array.isArray(r.evidence)) throw new Error('typed rule contract'); assertBusinessModel(x); });
+  check('evidence line notation', () => { const x=normalizeEvidenceRef('src/A.java#L10-L12'); if(x.path!=='src/A.java'||x.startLine!==10||x.endLine!==12) throw new Error('line notation'); });
+  check('duplicate semantic IDs rejected', () => { let failed=false; try{assertBusinessModel(normalizeBusinessObject({rules:[{id:'same',statement:'a'},{id:'same',statement:'b'}]}));}catch{failed=true;} if(!failed) throw new Error('duplicate IDs accepted'); });
+  check('FACT requires direct evidence', () => { let failed=false; try{assertBusinessModel(normalizeBusinessObject({rules:[{id:'r',statement:'unsupported',classification:'FACT'}]}));}catch{failed=true;} if(!failed) throw new Error('unsupported FACT was accepted'); });
+  check('traceability aliases', () => { const page={id:'overview',path:'docs/orientation/overview.md',evidence:[],models:[]}; const x=normalizeTraceabilityObject({facts:[{claim:'Service uses PostgreSQL',status:'fact',sources:['pom.xml'],subject:'service',predicate:'database',object:'postgresql'}]},page); if(x.claims.length!==1||x.claims[0].kind!=='claim'||x.claims[0].classification!=='FACT') throw new Error('traceability normalization'); });
+  check('contradiction detection keys', () => { const a={subject:'quote',predicate:'mutable',object:'yes',polarity:'positive',statement:'a'}, b={subject:'quote',predicate:'mutable',object:'no',polarity:'positive',statement:'b'}; if(claimSemanticKey(a)!==claimSemanticKey(b)||claimValueKey(a)===claimValueKey(b)) throw new Error('contradiction keys'); });
+  check('word count advisory only', () => { const q=qualityConfig(); if(q.wordCountGate==='hard') throw new Error('word count must not be primary hard gate'); });
   const failures = results.filter((x) => x.status === 'failed');
   const report = {
     schemaVersion: '1.0', kitVersion, checkedAt: now(), passed: failures.length === 0,
-    invariants: ['canonicalization', 'idempotence', 'losslessness', 'path-safety', 'identity-consistency', 'transactional-restore'],
-    boundaries: ['discover/evidence-index', 'analyze/system-model', 'semantics/business-model', 'semantics/flow-model', 'semantics/catalog-model', 'plan/manifest', 'generate/markdown-path', 'audit/report', 'update/impact-plan'],
+    invariants: ['canonicalization', 'idempotence', 'losslessness', 'path-safety', 'identity-consistency', 'transactional-restore', 'typed-items', 'claim-traceability', 'semantic-quality', 'freshness'],
+    boundaries: ['discover/evidence-index', 'analyze/system-model', 'semantics/business-model', 'semantics/flow-model', 'semantics/catalog-model', 'plan/manifest', 'generate/markdown-path', 'audit/report', 'update/impact-plan', 'generate/traceability-sidecar', 'quality/cross-page-consistency'],
     tests: results
   };
   writeJson(path.join(root, '.docgen', 'state', 'contract-report.json'), report);
@@ -1599,7 +1911,8 @@ Project commands:
   docgen enrich <id|--all>      run explicit depth/completeness pass
   docgen audit <id|--all>
   docgen fix <id|--all>
-  docgen quality                run local + audit quality gates
+  docgen traceability           rebuild claim index, contradiction, duplicate, and freshness reports
+  docgen quality                run evidence-centric semantic + audit quality gates
   docgen snapshot
   docgen changed
   docgen update [path ...]
@@ -1643,6 +1956,7 @@ switch (command) {
   case 'enrich': if (args[0] === '--all') await doEnrichAll(); else if (args[0]) await doEnrich(args[0]); else fail('enrich requires <page-id|--all>'); break;
   case 'audit': if (args[0] === '--all') await doAuditAll(); else if (args[0]) { await doAudit(args[0]); rebuildAuditIndex(); writeQualitySummary(); } else fail('audit requires <page-id|--all>'); break;
   case 'fix': if (args[0] === '--all') await doFixAll(); else if (args[0]) await doFix(args[0]); else fail('fix requires <page-id|--all>'); break;
+  case 'traceability': doTraceability(); break;
   case 'quality': doQuality(); break;
   case 'snapshot': doSnapshot(); break;
   case 'changed': console.log(changedPaths().join('\n')); break;

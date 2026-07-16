@@ -1,1 +1,1 @@
-Run the project-local DocGen orchestrator command `node scripts/docgen.mjs plan` and report the result.
+Run the globally installed DocGen orchestrator command `docgen plan`. Report the manifest location and page count when successful.

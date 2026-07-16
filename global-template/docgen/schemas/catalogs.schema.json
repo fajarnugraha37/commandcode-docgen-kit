@@ -13,19 +13,34 @@
   ],
   "properties": {
     "endpoints": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "messageHandlers": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "externalDependencies": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "dataStores": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "scheduledJobs": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "schemaVersion": {
       "const": "1.0"

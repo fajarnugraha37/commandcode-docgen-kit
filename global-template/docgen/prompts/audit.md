@@ -25,3 +25,7 @@ Write/update only the audit artifact for this page. Never modify application sou
 
 Current page hash (copy to report as `pageHash`): {{PAGE_HASH}}
 Current evidence/model contract hash (copy to report as `inputHash`): {{PAGE_INPUT_HASH}}
+
+Traceability audit:
+- Read the page traceability sidecar. Identify claims with no evidence/model grounding, claims misclassified as FACT, stale hashes, missing catalog/branch item coverage, and claim statements contradicting source-backed models.
+- Audit findings should include relevant `claimIds` and evidence references.

@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docgen:semantic-item:1.0",
+  "$defs": {
+    "evidenceRef": {
+      "type": "object",
+      "required": [
+        "id",
+        "path",
+        "symbol",
+        "startLine",
+        "endLine",
+        "note"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "startLine": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "endLine": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "semanticItem": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "statement",
+        "classification",
+        "confidence",
+        "evidence",
+        "sourceModelRefs",
+        "unknowns",
+        "tags"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string"
+        },
+        "statement": {
+          "type": "string"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "classification": {
+          "enum": [
+            "FACT",
+            "INFERENCE",
+            "UNKNOWN"
+          ]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidenceRef"
+          }
+        },
+        "sourceModelRefs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "unknowns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "claim": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/semanticItem"
+        },
+        {
+          "type": "object",
+          "required": [
+            "pageId",
+            "section",
+            "subject",
+            "predicate",
+            "object",
+            "polarity",
+            "intentionalDuplicate",
+            "notes"
+          ],
+          "properties": {
+            "kind": {
+              "const": "claim"
+            },
+            "pageId": {
+              "type": "string"
+            },
+            "section": {
+              "type": "string"
+            },
+            "subject": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "predicate": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "object": {},
+            "polarity": {
+              "enum": [
+                "positive",
+                "negative"
+              ]
+            },
+            "intentionalDuplicate": {
+              "type": "boolean"
+            },
+            "notes": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

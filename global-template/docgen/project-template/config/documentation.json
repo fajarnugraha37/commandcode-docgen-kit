@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.3",
+  "schemaVersion": "1.4",
   "projectName": "",
   "outputRoot": "docs",
   "discoveryScopes": [
@@ -130,7 +130,23 @@
       "message-handler-catalog",
       "external-dependency-catalog"
     ],
-    "enrichmentMode": "on-failure"
+    "enrichmentMode": "on-failure",
+    "wordCountGate": "advisory",
+    "semanticMetrics": {
+      "minClaimGroundingRatio": 0.9,
+      "minEvidenceCoverageRatio": 0.8,
+      "minCatalogCoverageRatio": 1.0,
+      "minBranchCoverageRatio": 0.9,
+      "minEvidenceClaimsPer1000Words": 1.5,
+      "maxUnsupportedClaims": 0,
+      "maxContradictions": 0,
+      "maxStalePages": 0,
+      "duplicateClaimsAsWarning": true,
+      "minModelCoverageRatio": 0.9,
+      "evidenceClaimDensityGate": "hard",
+      "minStructuredClaimRatio": 0.7,
+      "maxClaimIdCollisions": 0
+    }
   },
   "progress": {
     "heartbeatSeconds": 10,

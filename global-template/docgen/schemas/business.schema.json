@@ -18,34 +18,64 @@
   ],
   "properties": {
     "actors": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "capabilities": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "concepts": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "businessRules": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "decisions": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "branchConditions": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "lifecycles": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "invariants": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "useCases": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "unknowns": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
     },
     "schemaVersion": {
       "const": "1.0"

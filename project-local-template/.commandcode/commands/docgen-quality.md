@@ -1,1 +1,1 @@
-Run the project-local DocGen orchestrator command `node scripts/docgen.mjs quality` and report the result.
+Run `docgen quality` for the current initialized repository. Report local page-quality metrics, audit severity totals, and whether the configured quality gate passes.

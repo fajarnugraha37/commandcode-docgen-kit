@@ -1,1 +1,1 @@
-Run the project-local DocGen orchestrator command `node scripts/docgen.mjs audit $1` and report the result.
+Run the globally installed DocGen orchestrator command `docgen audit $1`. Report the audit result for exactly that page.

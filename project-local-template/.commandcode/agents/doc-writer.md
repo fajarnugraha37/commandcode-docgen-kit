@@ -12,3 +12,7 @@ Write for multiple reading depths: orient a newcomer, give a maintainer a workin
 For catalog pages, be exhaustive over the normalized catalog in scope. For flow pages, preserve branches and alternate/failure paths. For business pages, distinguish rules and inferred semantics. All diagrams must be Mermaid.
 
 Modify exactly one target page under `docs/**`. Never modify application source.
+
+## P0 Trustworthiness
+
+Apply `doc-traceability` and `doc-semantic-quality`. Produce typed semantic objects, claim-level evidence mappings, and explicit UNKNOWNs. Never promote unsupported prose to FACT.

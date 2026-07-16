@@ -27,3 +27,10 @@ Coverage requirements:
 Use FACT / INFERENCE / UNKNOWN and evidence references. Empty arrays are valid when no evidence exists. Never invent a business rule or infrastructure hop.
 
 Do not write published documentation.
+
+P0 typed-output contract:
+- Do not emit scalar strings in semantic arrays. Emit typed objects with stable IDs.
+- Every item requires `kind`, `classification` (`FACT`, `INFERENCE`, or `UNKNOWN`), confidence 0..1, and `evidence[]`.
+- Business rules must identify statement, trigger/conditions, outcome, exceptions/failure outcome when evidenced.
+- Decisions and flows must enumerate branches; catalog entries must expose their identifying contract fields.
+- Facts without direct evidence are invalid; downgrade them to INFERENCE or UNKNOWN rather than inventing evidence.

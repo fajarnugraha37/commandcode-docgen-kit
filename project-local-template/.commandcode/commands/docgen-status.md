@@ -1,1 +1,1 @@
-Run the project-local DocGen orchestrator command `node scripts/docgen.mjs status` and report the result.
+Run `docgen status` for the current initialized repository and report the pipeline state.

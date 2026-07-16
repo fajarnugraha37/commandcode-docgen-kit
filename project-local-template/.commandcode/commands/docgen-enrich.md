@@ -1,1 +1,1 @@
-Run the project-local DocGen orchestrator command `node scripts/docgen.mjs enrich $1` and report the result.
+Run the globally installed DocGen orchestrator command `docgen enrich $1`. Perform the bounded depth-and-completeness pass for exactly the requested manifest page.

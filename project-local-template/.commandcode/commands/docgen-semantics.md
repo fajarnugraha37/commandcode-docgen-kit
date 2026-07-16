@@ -1,5 +1,7 @@
-Run the project-local DocGen semantics stage:
+Run the global DocGen orchestrator semantics stage in the current initialized repository:
 
 ```bash
-node scripts/docgen.mjs semantics
+docgen semantics
 ```
+
+This extracts business rules/decisions/branches, six flow types, endpoints, message handlers, external dependencies, data stores and scheduled jobs into normalized model files.

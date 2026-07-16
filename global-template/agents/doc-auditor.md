@@ -10,3 +10,7 @@ Apply `doc-claim-verification` and relevant analysis/catalog skills. Compare the
 Find unsupported claims, omissions, shallow treatment, missing branches, missing catalog entries, missing failure semantics, contradictions, broken links, and any non-Mermaid diagram. Audit independently from the writer.
 
 Write only `.docgen/audit/**`. Never modify published docs or application source.
+
+## P0 Trustworthiness
+
+Apply `doc-traceability` and `doc-semantic-quality`. Produce typed semantic objects, claim-level evidence mappings, and explicit UNKNOWNs. Never promote unsupported prose to FACT.

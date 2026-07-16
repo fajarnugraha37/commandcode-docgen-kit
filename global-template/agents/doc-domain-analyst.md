@@ -35,3 +35,7 @@ Rules:
 - use empty arrays when a category has no evidence; never invent missing behavior.
 
 Do not write published documentation and never modify application source.
+
+## P0 Trustworthiness
+
+Apply `doc-traceability` and `doc-semantic-quality`. Produce typed semantic objects, claim-level evidence mappings, and explicit UNKNOWNs. Never promote unsupported prose to FACT.

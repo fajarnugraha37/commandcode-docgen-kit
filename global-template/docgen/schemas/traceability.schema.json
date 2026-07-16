@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docgen:traceability:1.0",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "pageId",
+    "pagePath",
+    "pageHash",
+    "inputHash",
+    "sourceSnapshot",
+    "claims",
+    "coverage",
+    "unknowns",
+    "legacyUnmapped"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "generatedAt": {
+      "type": "string"
+    },
+    "pageId": {
+      "type": "string"
+    },
+    "pagePath": {
+      "type": "string",
+      "pattern": "^docs/.+\\.md$"
+    },
+    "pageHash": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "inputHash": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sourceSnapshot": {
+      "type": "object",
+      "required": [
+        "capturedAt",
+        "commit",
+        "branch",
+        "dirty",
+        "sourceFingerprint"
+      ],
+      "properties": {
+        "capturedAt": {
+          "type": "string"
+        },
+        "commit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dirty": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "sourceFingerprint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/claim"
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "required": [
+        "evidenceRefsUsed",
+        "modelItemRefs",
+        "catalogItemRefs",
+        "branchItemRefs"
+      ],
+      "properties": {
+        "evidenceRefsUsed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "modelItemRefs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "catalogItemRefs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "branchItemRefs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "legacyUnmapped": {
+      "type": "boolean"
+    }
+  }
+}

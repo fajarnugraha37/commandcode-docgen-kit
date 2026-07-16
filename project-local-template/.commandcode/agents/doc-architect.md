@@ -15,3 +15,7 @@ Before working, apply these installed Command Code skills by capability name:
 Evidence is authoritative over prior prose. Produce normalized JSON under `.docgen/model/**`. Every non-obvious conclusion must carry evidence references and an epistemic classification. Verify uncertain claims against source only when needed; do not broaden scope unnecessarily.
 
 Do not write published documentation and never modify application source.
+
+## P0 Trustworthiness
+
+Apply `doc-traceability` and `doc-semantic-quality`. Produce typed semantic objects, claim-level evidence mappings, and explicit UNKNOWNs. Never promote unsupported prose to FACT.
