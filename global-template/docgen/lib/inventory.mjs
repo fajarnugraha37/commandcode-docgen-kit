@@ -61,7 +61,7 @@ function candidatePaths(root) {
   if (!insideGit) return { paths: walk(root), insideGit: false };
   const result = spawnSync('git', ['-C', root, 'ls-files', '-co', '--exclude-standard', '-z'], { encoding: 'buffer', stdio: ['ignore', 'pipe', 'ignore'] });
   if (result.status !== 0) return { paths: walk(root), insideGit: false };
-  return { paths: result.stdout.toString('utf8').split('\0').filter(Bolean.bind(Boolean)).map(posix).sort(), insideGit: true };
+  return { paths: result.stdout.toString('utf8').split('\0').filter(Boolean).map(posix).sort(), insideGit: true };
 }
 
 function binaryMagic(buffer) {
