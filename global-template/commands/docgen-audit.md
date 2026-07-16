@@ -1,1 +1,1 @@
-Run the globally installed DocGen orchestrator command `docgen audit $1`. Report the audit result for exactly that page.
+Run `docgen audit` in the current repository. Execute deterministic structural/traceability checks for every page and invoke the LLM auditor only for pages above the configured risk threshold whose audit input hash changed. Report deterministic failures, high-risk findings, audited-page count, and budget usage.
