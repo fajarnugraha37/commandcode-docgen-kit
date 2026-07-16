@@ -19,7 +19,7 @@ function fixture() {
   fs.mkdirSync(path.join(root, 'src'), { recursive: true });
   fs.mkdirSync(path.dirname(p.config), { recursive: true });
   writeJson(p.project, { schemaVersion: '2.0', kitVersion: '2.0.0' });
-  writeJson(p.config, { schemaVersion: '2.0', projectName: 'Fixture', ignore: { useGitignore: true, useDocgenignore: true, binary: { enabled: true, maxTextFileBytes: 1024 * 1024 } }, context: { maxTokens: { default: 4000, generate: 4000 } }, execution: { generationBatchSize: 2, maxPlannedPages: 30 }, audit: { llmEnabled: false } });
+  writeJson(p.config, { schemaVersion: '2.0', projectName: 'Fixture', ignore: { useGitignore: true, useDocgenignore: true, binary: { enabled: true, maxTextFileBytes: 1024 * 1024 } }, context: { maxTokens: { default: 4000, modelCore: 4000, modelEnterprise: 4000, plan: 4000, generate: 4000, audit: 2000 } }, budget: { maxProviderCalls: 10, maxEstimatedInputTokens: 200000, maxEstimatedOutputTokens: 50000, maxContextTokensPerCall: 10000 }, execution: { generationBatchSize: 2, maxPlannedPages: 30 }, audit: { llmEnabled: false }, retry: { maxAttempts: 1 } });
   writeJson(p.state, { schemaVersion: '2.0', kitVersion: '2.0.0', stages: {}, pages: {} });
   return root;
 }
@@ -32,6 +32,39 @@ function catalogFixture(root) {
   writeJson(path.join(p.model, 'catalogs.json'), { schemaVersion: '2.0', endpoints: [{ id: 'create-quote', name: 'Create quote', statement: 'Creates a quote.', classification: 'FACT', confidence: 1, method: 'POST', path: '/quotes', evidence: [{ path: 'src/Resource.java', startLine: 1 }] }], messageHandlers: [], externalDependencies: [], dataStores: [], scheduledJobs: [] });
   writeJson(p.plan, { schemaVersion: '2.0', pages: [{ id: 'endpoint-catalog', title: 'Endpoint Catalog', summary: 'HTTP API reference.', category: 'api', mode: 'reference', type: 'reference', order: 1, audience: ['engineer'], coverageTags: ['endpoint-catalog'], query: 'endpoints', requiredSections: [], relatedPages: [] }] });
   return p;
+}
+
+function installFakeProvider(root) {
+  const file = path.join(root, 'fake-provider.mjs');
+  fs.writeFileSync(file, `#!/usr/bin/env node
+import fs from 'node:fs';
+import path from 'node:path';
+const prompt=fs.readFileSync(0,'utf8');
+const stage=process.env.DOCGEN_STAGE;
+const cwd=process.cwd();
+const target=(prompt.match(/Write exactly one JSON file: \\`([^\\`]+)\\`/i)||[])[1];
+const write=(rel,value)=>{const file=path.join(cwd,rel);fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,JSON.stringify(value,null,2)+'\\n');};
+if(stage==='modelCore'){
+  write(target,{system:{components:[{id:'resource',kind:'component',name:'Resource',statement:'HTTP resource',classification:'FACT',confidence:1,evidence:[{path:'src/Resource.java',startLine:1}]}],relationships:[],workflows:[],unknowns:[]},business:{actors:[],capabilities:[],concepts:[],businessRules:[],decisions:[],branchConditions:[],lifecycles:[],invariants:[],useCases:[],unknowns:[]},flows:{businessFlows:[],controlFlows:[],requestFlows:[],trafficFlows:[],dataFlows:[],eventFlows:[]},catalogs:{endpoints:[],messageHandlers:[],externalDependencies:[],dataStores:[],scheduledJobs:[]}});
+}else if(stage==='modelEnterprise'){
+  write(target,{security:{unknowns:[]},operations:{unknowns:[]},testing:{unknowns:[]},'data-governance':{unknowns:[]},decisions:{unknowns:[]},configuration:{unknowns:[]},'change-impact':{unknowns:[]},ownership:{unknowns:[]}});
+}else if(stage==='plan'){
+  write(target,{schemaVersion:'2.0',metadata:{description:'Fixture docs'},pages:[{id:'overview',title:'System Overview',summary:'Fixture overview.',category:'orientation',mode:'explanation',type:'overview',order:1,audience:['engineer'],coverageTags:['architecture'],query:'resource architecture',requiredSections:[],risk:'low',relatedPages:[]}]});
+}else if(stage==='generate'){
+  const json=(prompt.match(/Page contracts:\\n([\\s\\S]*?)\\n\\nFor every contract:/)||[])[1];
+  const contracts=JSON.parse(json);
+  for(const contract of contracts){
+    const page=contract.page;
+    const md='---\\ntitle: '+JSON.stringify(page.title)+'\\ndescription: '+JSON.stringify(page.summary)+'\\npageId: '+JSON.stringify(page.id)+'\\ncategory: '+JSON.stringify(page.category)+'\\nmode: '+JSON.stringify(page.mode)+'\\ntype: '+JSON.stringify(page.type)+'\\norder: '+page.order+'\\n---\\n# '+page.title+'\\n\\n'+page.summary+'\\n\\nThe repository exposes an HTTP resource.\\n';
+    const output=path.join(cwd,contract.outputPath);fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(output,md);
+    write(contract.traceabilityPath,{schemaVersion:'2.0',pageId:page.id,pagePath:contract.outputPath,claims:[{id:page.id+':resource',section:page.title,statement:'The repository exposes an HTTP resource.',classification:'FACT',confidence:1,evidence:[{path:'src/Resource.java',startLine:1}],sourceModelRefs:['system:resource']}]});
+  }
+}else if(stage==='audit'){
+  const output=(prompt.match(/report: \\`([^\\`]+)\\`/i)||[])[1]||'.docgen/audit/llm-risk.json';write(output,{schemaVersion:'2.0',pages:[]});
+}else{process.exitCode=2;console.error('unexpected stage '+stage);}
+`);
+  fs.chmodSync(file, 0o755);
+  return file;
 }
 
 test('inventory excludes binary and docgenignore paths', () => {
@@ -96,6 +129,17 @@ test('deterministic audit rejects FACT evidence outside inventory', async () => 
   const root = fixture(); const p = catalogFixture(root); await generate(root);
   const file = path.join(p.traceability, 'pages', 'endpoint-catalog.json'); const trace = readJson(file); trace.claims[0].evidence = [{ path: 'ignored/secret.java' }]; writeJson(file, trace);
   await assert.rejects(() => audit(root), /Quality failed/);
+});
+
+test('full indexed pipeline uses four provider calls then zero on resume', () => {
+  const root = fixture(); const p = projectPaths(root); const provider = installFakeProvider(root);
+  fs.writeFileSync(path.join(root, 'src', 'Resource.java'), '@Path("/quotes")\nclass Resource { @GET void get() {} }\n');
+  const config = readJson(p.config); config.commandCode = { executable: provider, trust: false, skipOnboarding: false, yolo: false, verbose: false, maxTurns: { default: 4 } }; writeJson(p.config, config);
+  const first = spawnSync(process.execPath, [cli, 'all'], { cwd: root, encoding: 'utf8' }); assert.equal(first.status, 0, first.stderr || first.stdout);
+  const firstBudget = readJson(p.budget); assert.equal(firstBudget.usage.providerCalls, 4);
+  const second = spawnSync(process.execPath, [cli, 'all'], { cwd: root, encoding: 'utf8' }); assert.equal(second.status, 0, second.stderr || second.stdout);
+  const secondBudget = readJson(p.budget); assert.equal(secondBudget.usage.providerCalls, 4);
+  assert.equal(readJson(path.join(p.audit, 'quality-summary.json')).pass, true);
 });
 
 test('v1 migration preserves docs and ignore policy while archiving workflow state', () => {
