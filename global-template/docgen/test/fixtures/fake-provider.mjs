@@ -2,6 +2,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+const maxTurnsIndex = process.argv.indexOf('--max-turns');
+const maxTurns = maxTurnsIndex >= 0 ? Number(process.argv[maxTurnsIndex + 1]) : 0;
+if (!Number.isFinite(maxTurns) || maxTurns < 30) {
+  console.error(`Warning: Reached maximum conversation turns (${maxTurns || 'missing'}). Retry with --max-turns 30.`);
+  process.exit(8);
+}
+
 const prompt = fs.readFileSync(0, 'utf8');
 const stage = process.env.DOCGEN_STAGE;
 const cwd = process.cwd();
