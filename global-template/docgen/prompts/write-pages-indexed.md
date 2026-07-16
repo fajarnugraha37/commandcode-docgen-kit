@@ -6,8 +6,9 @@ Page contracts:
 For every contract:
 1. Read only its declared `contextPath`.
 2. Write exactly its declared `outputPath`.
-3. Do not read repository source, SQLite, broad `.docgen/model/**`, existing unrelated pages, agents, or skills.
-4. Treat the context pack as the complete allowed factual context.
+3. Write exactly its declared `traceabilityPath` in the same run.
+4. Do not read repository source, SQLite, broad `.docgen/model/**`, existing unrelated pages, agents, or skills.
+5. Treat the context pack as the complete allowed factual context.
 
 Writing rules:
 - preserve FACT / INFERENCE / UNKNOWN distinctions;
@@ -21,4 +22,23 @@ Writing rules:
 - include YAML frontmatter with title, description, pageId, category, mode, type, and order;
 - verify every output exists and contains one H1 before finishing.
 
+Traceability sidecar shape:
+{
+  "schemaVersion": "2.0",
+  "pageId": "contract page id",
+  "pagePath": "contract output path",
+  "claims": [
+    {
+      "id": "stable page-scoped claim id",
+      "section": "heading containing the claim",
+      "statement": "material repository-specific claim",
+      "classification": "FACT|INFERENCE|UNKNOWN",
+      "confidence": 0.0,
+      "evidence": [{"path":"repository-relative path","startLine":1,"endLine":1}],
+      "sourceModelRefs": ["qualified model item id from context"]
+    }
+  ]
+}
+
+A FACT claim requires direct evidence present in the context pack. The orchestrator will fill pageHash, inputHash, and contextId.
 Do not delegate to another agent. Complete the bounded write directly.
