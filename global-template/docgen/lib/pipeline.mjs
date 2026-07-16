@@ -6,6 +6,7 @@ import { budgetReport, runProvider } from './provider.mjs';
 import { databaseStats, indexRepository, ingestModels } from './indexer.mjs';
 import { auditRepository } from './quality.mjs';
 import { ensureDir, fileSha256, kitVersion, loadConfig, now, projectPaths, readJson, rel, sha256, slug, sourceSnapshot, stableHash, updateStage, writeJson } from './core.mjs';
+import { evidenceFromAliases, normalizeSemanticDocument, normalizeSourceModelRefs, semanticMetadata } from './semantic.mjs';
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -42,13 +43,24 @@ export function index(root, options = {}) {
   catch (error) { failStage(root, 'index', error); throw error; }
 }
 
-function splitBundle(root, bundle, names) {
-  ensureDir(projectPaths(root).model);
-  for (const name of names) {
-    const value = bundle[name] ?? bundle[name.replaceAll('-', '')] ?? bundle[name.replace(/-([a-z])/g, (_, c) => c.toUpperCase())];
-    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`Model bundle is missing object: ${name}`);
-    writeJson(modelPath(root, name), { schemaVersion: '2.0', generatedAt: now(), ...value });
+function bundleObject(bundle, name) {
+  const containers = [bundle, bundle?.models, bundle?.model, bundle?.modules, bundle?.result].filter((value) => value && typeof value === 'object' && !Array.isArray(value));
+  const expected = name.replace(/[^a-z0-9]/gi, '').toLowerCase();
+  for (const container of containers) {
+    for (const [key, value] of Object.entries(container)) {
+      if (key.replace(/[^a-z0-9]/gi, '').toLowerCase() === expected && value && typeof value === 'object' && !Array.isArray(value)) return value;
+    }
   }
+  return null;
+}
+function splitBundle(root, bundle, names) {
+  ensureDir(projectPaths(root).model); const missing = [];
+  for (const name of names) {
+    const value = bundleObject(bundle, name);
+    if (!value) { missing.push(name); continue; }
+    normalizeSemanticDocument(value); writeJson(modelPath(root, name), { schemaVersion: '2.0', generatedAt: now(), ...value });
+  }
+  return missing;
 }
 
 async function synthesizeBundle(root, stage, names, query) {
@@ -56,16 +68,29 @@ async function synthesizeBundle(root, stage, names, query) {
   const output = path.join(paths.model, `${stage}-bundle.json`); const inputHash = context.payload.inputHash; const outputs = names.map((name) => modelPath(root, name));
   if (stageCurrent(root, stage, inputHash, outputs)) return { skipped: true, inputHash };
   ensureDir(paths.model); updateStage(root, stage, 'running', { inputHash, contextId: context.payload.id });
-  const body = prompt(root, stage === 'modelCore' ? 'model-core.md' : 'model-enterprise.md', { CONTEXT_PATH: rel(root, context.file), OUTPUT_PATH: rel(root, output), MODEL_NAMES: JSON.stringify(names) });
-  const outputBefore = artifactStamp(output); let bundleWritten = false; const acceptBundle = () => {
-    try { if (!artifactChanged(output, outputBefore)) return false; const bundle = validateJson(output); splitBundle(root, bundle, names); bundleWritten = true; return outputs.every((file) => fs.existsSync(file)); }
-    catch { return false; }
-  };
+  const renderPrompt = (expected, target) => prompt(root, stage === 'modelCore' ? 'model-core.md' : 'model-enterprise.md', { CONTEXT_PATH: rel(root, context.file), OUTPUT_PATH: rel(root, target), MODEL_NAMES: JSON.stringify(expected) });
+  async function requestBundle(expected, target, repair = false) {
+    const before = artifactStamp(target); let accepted = false; let missing = expected;
+    const accept = () => {
+      try { if (!artifactChanged(target, before)) return false; const bundle = validateJson(target); missing = splitBundle(root, bundle, expected); accepted = missing.length === 0; return accepted; } catch { return false; }
+    };
+    const provider = await runProvider(root, { stage, target: repair ? `${stage}:repair:${expected.join(',')}` : stage, prompt: renderPrompt(expected, target), acceptArtifacts: accept });
+    if (!accepted) {
+      if (!artifactChanged(target, before)) throw new Error(`${stage}: provider completed without writing a fresh bundle artifact`);
+      missing = splitBundle(root, validateJson(target), expected);
+    }
+    return { provider, missing };
+  }
   try {
-    const provider = await runProvider(root, { stage, target: stage, prompt: body, acceptArtifacts: acceptBundle });
-    if (!bundleWritten) { if (!artifactChanged(output, outputBefore)) throw new Error(`${stage}: provider completed without writing a fresh bundle artifact`); const bundle = validateJson(output); splitBundle(root, bundle, names); }
-    fs.rmSync(output, { force: true }); completeStage(root, stage, inputHash, { models: names, contextId: context.payload.id, contextTokens: context.payload.estimatedTokens, recovered: provider.recovered === true });
-    return { skipped: false, recovered: provider.recovered === true, inputHash };
+    const first = await requestBundle(names, output); let missing = first.missing; let recovered = first.provider.recovered === true;
+    if (missing.length) {
+      console.warn(`[docgen] ${stage} REPAIR | bundle omitted ${missing.join(', ')}; requesting only missing model object(s).`);
+      const repairOutput = path.join(paths.model, `${stage}-repair-${sha256(missing.join('|')).slice(0, 10)}-bundle.json`);
+      const repaired = await requestBundle(missing, repairOutput, true); recovered ||= repaired.provider.recovered === true; missing = repaired.missing; fs.rmSync(repairOutput, { force: true });
+    }
+    if (missing.length) throw new Error(`Model bundle is missing object(s) after targeted repair: ${missing.join(', ')}`);
+    fs.rmSync(output, { force: true }); completeStage(root, stage, inputHash, { models: names, contextId: context.payload.id, contextTokens: context.payload.estimatedTokens, recovered });
+    return { skipped: false, recovered, inputHash };
   } catch (error) { failStage(root, stage, error, { inputHash, contextId: context.payload.id }); throw error; }
 }
 
@@ -149,17 +174,26 @@ function writeTrace(root, page, claims, inputHash, contextId = null) {
 }
 function renderDeterministic(root, page, kind, inputHash) {
   const data = referenceData(root, kind); const text = `${frontmatter(page)}# ${page.title}\n\n${page.summary}\n\n${markdownTable(data.headers, data.rows)}\n`; const file = path.join(root, page.path); ensureDir(path.dirname(file)); fs.writeFileSync(file, text);
-  const claims = data.items.map((item, indexValue) => ({ id: `${page.id}:${item.id ?? indexValue + 1}`, section: page.title, statement: item.statement ?? item.summary ?? item.description ?? item.name ?? item.id, classification: String(item.classification ?? (item.evidence?.length ? 'FACT' : 'UNKNOWN')).toUpperCase(), confidence: Number(item.confidence ?? (item.evidence?.length ? 1 : 0)), evidence: item.evidence ?? [], sourceModelRefs: [`${data.model}:${item.id ?? indexValue + 1}`] }));
+  const claims = data.items.map((item, indexValue) => { const metadata = semanticMetadata(item); return { id: `${page.id}:${item.id ?? indexValue + 1}`, section: page.title, statement: item.statement ?? item.summary ?? item.description ?? item.name ?? item.id, classification: metadata.classification, confidence: metadata.confidence, evidence: metadata.evidence, sourceModelRefs: [`${data.model}:${item.id ?? indexValue + 1}`] }; });
   writeTrace(root, page, claims, inputHash); return { items: data.items.length, hash: sha256(text) };
 }
 function pageInputHash(page, contextHash) { return stableHash({ page, contextHash }); }
 function finalizeProviderTrace(root, page, inputHash, contextId) {
   const file = tracePath(root, page); const trace = validateJson(file); if (!Array.isArray(trace.claims)) throw new Error(`${rel(root, file)} must contain claims[].`);
-  const ids = new Set();
+  const contextFile = path.join(projectPaths(root).context, 'generate', `${page.id.replace(/[^a-z0-9_.-]+/gi, '-')}.json`); const context = fs.existsSync(contextFile) ? readJson(contextFile, {}) : {};
+  const modelItems = new Map(); const aliases = new Map(); const perModel = new Map();
+  for (const item of context.modelItems ?? []) { modelItems.set(item.id, item); const ordinal = (perModel.get(item.model) ?? 0) + 1; perModel.set(item.model, ordinal); aliases.set(`${item.model}:${ordinal}`, item.id); }
+  const dedupeEvidence = (entries) => { const seen = new Set(); return entries.filter((entry) => { const key = `${entry.path}\0${entry.startLine ?? ''}\0${entry.endLine ?? ''}`; if (seen.has(key)) return false; seen.add(key); return true; }); };
+  const ids = new Set(); const normalizedClaims = [];
   for (const claim of trace.claims) {
     claim.id = String(claim.id ?? `${page.id}:claim-${ids.size + 1}`); if (ids.has(claim.id)) throw new Error(`${page.id}: duplicate claim id ${claim.id}`); ids.add(claim.id);
-    claim.statement = String(claim.statement ?? '').trim(); claim.classification = String(claim.classification ?? 'UNKNOWN').toUpperCase(); claim.confidence = Number(claim.confidence ?? (claim.classification === 'FACT' ? 1 : 0)); claim.evidence = Array.isArray(claim.evidence) ? claim.evidence : []; claim.sourceModelRefs = Array.isArray(claim.sourceModelRefs) ? claim.sourceModelRefs : [];
+    const requestedRefs = normalizeSourceModelRefs(claim.sourceModelRefs ?? claim.modelRefs).map((ref) => aliases.get(ref) ?? ref); const refs = requestedRefs.filter((ref) => modelItems.has(ref)); const referenced = refs.map((ref) => modelItems.get(ref)); const metadata = semanticMetadata(claim);
+    const inherited = referenced.flatMap((item) => evidenceFromAliases(item)); const evidence = dedupeEvidence([...metadata.evidence, ...inherited]); const fallbackStatement = referenced.map((item) => String(item.statement ?? item.payload?.statement ?? item.name ?? '')).find(Boolean);
+    claim.statement = String(claim.statement ?? fallbackStatement ?? '').trim(); claim.classification = metadata.requestedClassification === 'FACT' && evidence.length ? 'FACT' : metadata.classification; claim.confidence = claim.classification === 'FACT' ? Math.max(metadata.confidence, 0.8) : metadata.confidence; claim.evidence = evidence; claim.sourceModelRefs = refs;
+    if (!claim.statement && !claim.evidence.length && !claim.sourceModelRefs.length) continue;
+    normalizedClaims.push(claim);
   }
+  trace.claims = normalizedClaims;
   trace.schemaVersion = '2.0'; trace.pageId = page.id; trace.pagePath = page.path; trace.pageHash = sha256(fs.readFileSync(path.join(root, page.path))); trace.inputHash = inputHash; trace.contextId = contextId; trace.generatedAt = now(); writeJson(file, trace); return trace;
 }
 function validatePage(root, page, inputHash = null) {
@@ -229,6 +263,7 @@ export async function generate(root) {
       }
       const context = compileContext(root, { stage: 'generate', target: page.id, query: page.query, maxTokens: config.context?.maxTokens?.generate ?? 30000, metadata: { page } }); const inputHash = pageInputHash(page, context.payload.inputHash);
       try {
+        if (fs.existsSync(tracePath(root, page))) finalizeProviderTrace(root, page, inputHash, context.payload.id);
         const checked = validatePage(root, page, inputHash); updatePage(root, page.id, { status: 'completed', renderer: 'provider', inputHash, pageHash: checked.hash, contextId: context.payload.id, recovered: pageState(root, page.id).status !== 'completed', error: null }); reusedPages++; continue;
       } catch {}
       pending.push({ page, context, inputHash });
