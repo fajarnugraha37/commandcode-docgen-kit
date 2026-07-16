@@ -1,28 +1,15 @@
 {
-  "schemaVersion": "1.0",
-  "kitVersion": "1.0.0",
+  "schemaVersion": "2.0",
+  "kitVersion": "2.0.0",
   "updatedAt": null,
   "stages": {
-    "discover": {
-      "status": "pending"
-    },
-    "analyze": {
-      "status": "pending"
-    },
-    "plan": {
-      "status": "pending"
-    },
-    "generate": {
-      "status": "pending"
-    },
-    "audit": {
-      "status": "pending"
-    },
-    "semantics": {
-      "status": "pending"
-    },
-    "enterprise": {
-      "status": "pending"
-    }
-  }
+    "index": { "status": "pending" },
+    "modelCore": { "status": "pending" },
+    "modelEnterprise": { "status": "pending" },
+    "plan": { "status": "pending" },
+    "generate": { "status": "pending" },
+    "auditRisk": { "status": "pending" },
+    "audit": { "status": "pending" }
+  },
+  "pages": {}
 }
