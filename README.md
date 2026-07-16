@@ -38,38 +38,170 @@ Install the engine once. Initialize any number of repositories independently.
 
 ---
 
-## What's new in v0.7.0
+## What's new in v0.8.0
 
-v0.7.0 is the **P0 Documentation Trustworthiness release**. It keeps the v0.6 contract firewall and adds the controls required to determine whether generated documentation is actually supported by repository evidence rather than merely long and plausible.
+v0.8.0 is the **P1 Enterprise Depth and Source-Boundary release**. It retains the P0 trustworthiness and contract-firewall controls from v0.7.0, then adds first-class enterprise models for security, operability, testing, data governance, architectural decisions, configuration, change impact, and ownership.
 
-The P0 scope is intentionally limited to:
+It also makes `.gitignore` and `.docgenignore` a **hard source boundary**. Ignored paths are excluded from repository discovery, source fingerprints, change detection, traceability, FACT evidence, and DocGen-controlled read/search operations.
 
-1. strongly typed semantic model items;
-2. claim-level source traceability;
-3. evidence-centric quality metrics;
-4. cross-page contradiction and duplicate detection;
-5. source commit/fingerprint freshness metadata;
-6. advisory word-count targets instead of prose-length hard gates.
-
-The central quality model is now:
+The full knowledge pipeline is now:
 
 ```text
-source evidence
+repository source inventory
+      │
+      ├── .gitignore
+      ├── .docgenignore
+      └── deterministic hard exclusions
       │
       ▼
-typed semantic items
+evidence discovery
       │
       ▼
-page claims + source/model references
+technical architecture model
       │
       ▼
-deterministic coverage and consistency metrics
+business + flow + interface semantics
       │
       ▼
-quality gate
+P1 enterprise-depth models
+      │
+      ▼
+coverage-driven multi-page plan
+      │
+      ▼
+generation + traceability
+      │
+      ▼
+audit + semantic quality gates
 ```
 
-A page is not considered trustworthy merely because it contains many words, headings, or diagrams.
+### P1 enterprise-depth models
+
+The enterprise stage is split into four bounded passes so non-frontier models do not have to synthesize every enterprise concern in one context:
+
+| Pass | Canonical outputs | Primary concerns |
+|---|---|---|
+| `governance` | `security.json`, `ownership.json` | trust boundaries, AuthN/AuthZ, permissions, secrets, sensitive data, threats, controls, owners, RACI, approvals, escalation |
+| `operability` | `operations.json`, `testing.json` | health, observability, SLI/SLO, alerts, capacity, scaling, failures, recovery, backups, deployment, runbooks, test strategy and quality gates |
+| `data-and-configuration` | `data-governance.json`, `configuration.json` | source of truth, ownership, classification, retention, transactions, consistency, concurrency, reconciliation, lineage, migration, environment matrix, flags and tuning |
+| `evolution` | `decisions.json`, `change-impact.json` | ADRs, inferred rationale, alternatives, trade-offs, consequences, change surfaces, blast radius, compatibility and safe extension points |
+
+Canonical project artifacts:
+
+```text
+.docgen/model/
+├── security.json
+├── operations.json
+├── testing.json
+├── data-governance.json
+├── decisions.json
+├── configuration.json
+├── change-impact.json
+└── ownership.json
+```
+
+Each item uses the same P0 typed semantic contract: stable ID, kind, statement, `FACT/INFERENCE/UNKNOWN`, confidence, evidence references, model relationships, unknowns, and tags. A `FACT` in any P1 model must resolve to an included repository source.
+
+Run only the enterprise stage:
+
+```bash
+docgen enterprise
+```
+
+### Ignore-aware source boundary
+
+DocGen constructs a canonical source inventory before discovery:
+
+```text
+.docgen/state/source-inventory.json
+.docgen/state/source-files.txt
+.docgen/state/ignore-report.json
+```
+
+The effective exclusion order is:
+
+```text
+DocGen hard exclusions
+        ↓
+config.exclude
+        ↓
+.gitignore
+        ↓
+.docgenignore
+```
+
+`.docgenignore` uses Gitignore-style patterns, including comments, directory patterns, `*`, `**`, `?`, anchoring, and `!` negation. A `.docgenignore` negation can re-include a path excluded by an earlier `.docgenignore` rule, but it deliberately **cannot re-include a path ignored by `.gitignore`**. This keeps the repository's Git privacy/build boundary authoritative. Root `.docgenignore` is user-owned policy: `docgen init --force` and project-local `install.mjs --force` preserve an existing file rather than replacing it.
+
+Example `.docgenignore`:
+
+```gitignore
+# Additional DocGen-only exclusions
+private-notes/**
+generated-clients/**
+fixtures/large/**
+
+# Re-include a public explanation from a DocGen-excluded tree
+!private-notes/public-architecture.md
+```
+
+Inspect the effective boundary without consuming LLM tokens:
+
+```bash
+docgen ignore
+docgen ignore path/to/file
+docgen source-list
+docgen source-list jersey
+docgen source-grep "@Path"
+docgen source-grep --regex "Kafka(Listen|Handler)"
+```
+
+During `DOCGEN_MODE=1`, hooks block broad source reads/searches that could bypass the inventory. Agents must read `.docgen/state/source-files.txt`, use explicit included paths, or use `docgen source-grep`. Ignored files are also rejected as evidence for typed `FACT` items and page claims.
+
+The same inventory powers:
+
+- discovery scope;
+- repository source fingerprints;
+- `docgen snapshot`;
+- `docgen changed`;
+- incremental impact analysis;
+- source freshness detection;
+- claim and semantic-model evidence validation.
+
+This prevents a path from being ignored during discovery but unexpectedly appearing later in change detection or traceability.
+
+### Eight-phase full pipeline
+
+```text
+Phase 1/8  source inventory + evidence discovery
+Phase 2/8  technical architecture analysis
+Phase 3/8  business, flow, and catalog semantics
+Phase 4/8  P1 enterprise depth (four bounded passes)
+Phase 5/8  preflighted multi-page planning
+Phase 6/8  batched generation + targeted enrichment
+Phase 7/8  batched independent audit + targeted repair
+Phase 8/8  semantic quality summary + source snapshot
+```
+
+### Upgrade from v0.7.0
+
+```powershell
+# Install the global v0.8.0 engine
+.\install.ps1 -Force
+
+cd C:\path\to\repository
+
+docgen migrate
+docgen contract-test
+docgen ignore
+docgen validate
+docgen resume
+```
+
+Migration is additive: existing project values, evidence, models, pages, traceability, and checkpoints are preserved. The new P1 defaults and ignore policy are merged without resetting user configuration.
+
+## P0 trustworthiness retained from v0.7.0
+
+v0.8.0 retains strongly typed semantic items, claim-level traceability, evidence-centric quality metrics, cross-page contradiction and duplicate detection, source freshness metadata, transactional contract boundaries, and advisory rather than primary word-count gates.
 
 ### Strongly typed semantic items
 
@@ -227,7 +359,7 @@ A page becomes stale when its Markdown changes, declared evidence/model content 
 ### Upgrade from v0.6.0
 
 ```powershell
-# Install the global v0.7.0 engine
+# Install the global v0.8.0 engine
 .\install.ps1 -Force
 
 cd C:\path	o
@@ -241,7 +373,7 @@ docgen resume
 
 Existing valid Markdown is preserved. Pages without a v0.7 traceability sidecar are treated as legacy-unmapped and receive targeted enrichment rather than full regeneration.
 
-### P0 commands
+### Trustworthiness commands
 
 ```powershell
 docgen traceability   # rebuild claim, contradiction, duplicate and freshness indexes
@@ -252,7 +384,7 @@ docgen validate       # contract + static + generated artifact validation
 
 ## Contract firewall retained from v0.6.0
 
-v0.7.0 is the **contract-firewall release**. It addresses the root class behind both expensive failures reported in earlier versions:
+v0.8.0 retains the **contract firewall** introduced in v0.6.0. It addresses the root class behind both expensive failures reported in earlier versions:
 
 ```text
 LLM producer emits a reasonable representation
@@ -359,7 +491,7 @@ A page is skipped only while that input fingerprint remains current. Existing va
 ### Safe recovery from the reported failure
 
 ```powershell
-# From the extracted v0.7.0 package
+# From the extracted v0.8.0 package
 .\install.ps1 -Force
 
 cd C:\path\to\your\repository
@@ -475,7 +607,7 @@ DocGen does not require a particular renderer.
 
 Earlier versions of the kit copied the entire engine into every target repository. That model is useful for a fully self-contained team-owned repository, but it is inefficient when one user wants to use the same documentation system across many repositories.
 
-The default architecture in v0.7.0 is therefore:
+The default architecture in v0.8.0 is therefore:
 
 ```text
 install once globally
@@ -613,10 +745,10 @@ Extract the release ZIP first.
 
 ```powershell
 Expand-Archive `
-  .\commandcode-docgen-kit-0.7.0.zip `
+  .\commandcode-docgen-kit-0.8.0.zip `
   -DestinationPath .\commandcode-docgen-kit
 
-cd .\commandcode-docgen-kit\commandcode-docgen-kit-0.7.0
+cd .\commandcode-docgen-kit\commandcode-docgen-kit-0.8.0
 
 .\install.ps1
 ```
@@ -624,8 +756,8 @@ cd .\commandcode-docgen-kit\commandcode-docgen-kit-0.7.0
 ## macOS / Linux
 
 ```bash
-unzip commandcode-docgen-kit-0.7.0.zip
-cd commandcode-docgen-kit-0.7.0
+unzip commandcode-docgen-kit-0.8.0.zip
+cd commandcode-docgen-kit-0.8.0
 ./install.sh
 ```
 
@@ -816,28 +948,36 @@ docgen all
 The first full run executes:
 
 ```text
-discover
+build ignore-aware source inventory
+   ↓
+discover repository evidence
    ↓
 analyze technical architecture
    ↓
 semantics: business + six flow types + catalogs
    ↓
-plan category-rich multi-page knowledge base
+enterprise depth: security, operations, testing, data governance,
+decisions, configuration, change impact, ownership
    ↓
-generate each planned page
+preflight and plan a category-rich multi-page knowledge base
    ↓
-audit each generated page
+batched generation + targeted enrichment
    ↓
-snapshot source fingerprints
+batched audit + targeted repair
+   ↓
+semantic quality gate + source snapshot
 ```
 
 For a large repository, prefer an explicit staged workflow:
 
 ```bash
+docgen ignore
 docgen discover src/main/java
 docgen analyze
 docgen semantics
+docgen enterprise
 docgen plan
+docgen preflight
 docgen generate --all
 docgen audit --all
 docgen snapshot
@@ -847,14 +987,14 @@ docgen snapshot
 
 # Live progress, heartbeat, logs, and error visibility
 
-DocGen v0.7.0 does not run Command Code as a silent blocking child process. Every LLM-backed stage is monitored as a live asynchronous process.
+DocGen v0.8.0 does not run Command Code as a silent blocking child process. Every LLM-backed stage is monitored as a live asynchronous process.
 
 A run now looks like:
 
 ```text
-Phase 1/7 — evidence discovery
+Phase 1/8 — source inventory + evidence discovery
 
-==> discover: . | phase 1/7
+==> discover: . | phase 1/8
     cmdc -p --trust --skip-onboarding --yolo --max-turns 30 --verbose
     logs: .docgen/runs/<run>.stdout.log | .docgen/runs/<run>.stderr.log
 
@@ -980,7 +1120,7 @@ Command Code reached --max-turns
 
 # Comprehensive quality profile
 
-The default v0.7.0 profile is:
+The default v0.8.0 profile is:
 
 ```json
 {
@@ -997,34 +1137,35 @@ No orchestration layer can guarantee frontier-model reasoning from a weak model.
 ## Comprehensive pipeline
 
 ```text
-repository
+ignore-aware source inventory
    │
    ▼
-discovery
+evidence discovery
    │
    ▼
-normalized architecture/workflow model
+normalized technical architecture/workflow model
    │
    ▼
-coverage-driven documentation manifest
+business, flow, endpoint, messaging, integration semantics
    │
    ▼
-page generation
+security, operations, testing, data governance, decisions,
+configuration, change impact, and ownership models
    │
    ▼
-depth/completeness enrichment
+coverage-driven documentation manifest + preflight
    │
    ▼
-independent audit
+batched page generation + claim traceability
    │
    ▼
-automatic repair when findings exist
+targeted enrichment only for failed local gates
    │
    ▼
-re-audit repaired pages
+batched independent audit + targeted repair/re-audit
    │
    ▼
-local quality gate + audit severity gate
+evidence-centric quality gate + source snapshot
 ```
 
 The important design choice is that a cheap model is **not** asked to understand an entire repository and produce perfect documentation in one response.
@@ -1038,8 +1179,13 @@ The planner must consider whether evidence supports documentation for:
 - domain concepts and terminology;
 - important request/event/workflow/state lifecycles;
 - API, messaging, persistence, configuration, security, and external integrations;
-- local development and common engineering tasks;
-- operations, observability, failure modes, recovery, and troubleshooting.
+- trust boundaries, authentication, authorization, secrets, sensitive data, and threats;
+- ownership, RACI, approval authority, escalation, and on-call responsibility;
+- transactions, consistency, concurrency, retention, reconciliation, lineage, and migration;
+- health, observability, SLI/SLO, capacity, scaling, failure modes, recovery, backup, deployment, and runbooks;
+- unit, integration, contract, end-to-end, failure-injection, test-data, and CI quality-gate strategy;
+- architecture decisions, alternatives, trade-offs, change impact, compatibility, and safe extension points;
+- local development and common engineering tasks.
 
 The planner must not invent a category with no evidence, but it also must not omit a material system surface simply because that surface is complex.
 
@@ -1072,7 +1218,7 @@ The manifest is therefore a **content contract**, not merely a filename list.
 
 ## Automatic enrichment
 
-With `quality.profile = "comprehensive"` and `quality.autoEnrich = true`, every generated page receives a second bounded writer pass.
+With `quality.profile = "comprehensive"` and `quality.autoEnrich = true`, DocGen evaluates every generated or legacy-adopted page, but runs a second writer pass only for pages that fail deterministic local trust/depth gates.
 
 The enrichment pass looks specifically for shallow areas and strengthens supported detail such as:
 
@@ -1149,14 +1295,14 @@ The machine-readable summary is written to:
 The full pipeline now performs:
 
 ```text
-Phase 1/6  discover
-Phase 2/6  analyze
-Phase 3/6  plan
-Phase 4/6  generate + enrich each page
-Phase 5/6  audit all pages
-           fix pages with findings
-           re-audit repaired pages
-Phase 7/7  quality summary + source snapshot
+Phase 1/8  build source inventory + discover
+Phase 2/8  analyze technical architecture
+Phase 3/8  extract business/flow/catalog semantics
+Phase 4/8  extract P1 enterprise-depth models
+Phase 5/8  plan + deterministic preflight
+Phase 6/8  batch-generate + targeted enrichment
+Phase 7/8  batch-audit + targeted fix/re-audit
+Phase 8/8  traceability/quality summary + source snapshot
 ```
 
 For faster or cheaper operation, set another profile and disable automatic passes:
@@ -2089,7 +2235,7 @@ docgen generate --all
 
 # Contract firewall and transactional artifacts
 
-Prompt instructions are soft constraints. v0.7.0 therefore does not trust an LLM to reproduce an exact JSON spelling or output-path notation.
+Prompt instructions are soft constraints. v0.8.0 therefore does not trust an LLM to reproduce an exact JSON spelling or output-path notation.
 
 ## Single representation principle
 
@@ -2173,7 +2319,7 @@ docgen doctor          # runtime compatibility + contract suite
 
 # Resumability, batching, and checkpoints
 
-v0.7.0 is resumable by default.
+v0.8.0 is resumable by default.
 
 ```powershell
 docgen resume
@@ -2224,7 +2370,7 @@ v0.4.x worst-case baseline
 into:
 
 ```text
-v0.7.0 default baseline
+v0.8.0 default baseline
 ceil(59 / 4) generation batches = 15
 ceil(59 / 6) audit batches      = 10
 enrichment                      = only pages failing local quality gates
@@ -2240,7 +2386,7 @@ docgen all --fresh
 
 # Rate limits, retries, and provider failures
 
-Command Code documents rate-limit failures as exit code `5`; connection failures use `6`, API 5xx failures use `7`, and max-turn exhaustion uses `8`. v0.7.0 handles `5`, `6`, and `7` as retryable by default. It also detects common provider text such as `429`, `rate limit exceeded`, `too many requests`, and `quota exceeded` when a provider reports a generic exit code.
+Command Code documents rate-limit failures as exit code `5`; connection failures use `6`, API 5xx failures use `7`, and max-turn exhaustion uses `8`. v0.8.0 handles `5`, `6`, and `7` as retryable by default. It also detects common provider text such as `429`, `rate limit exceeded`, `too many requests`, and `quota exceeded` when a provider reports a generic exit code.
 
 Default policy:
 
@@ -2924,7 +3070,7 @@ For a team that needs exact engine reproducibility inside the repository, use th
 
 ## Automatic additive migration from v0.3.x project config
 
-When v0.7.0 runs inside a repository initialized by an older global-first release, it additively merges new defaults into `.docgen/config/documentation.json`. Existing custom scalar values and existing array entries are preserved; new page types, audiences, semantics turn-budget defaults, Mermaid-only quality settings, and knowledge-base settings are added. The project marker is updated to the current kit version.
+When v0.8.0 runs inside a repository initialized by an older global-first release, it additively merges new defaults into `.docgen/config/documentation.json`. Existing custom scalar values and existing array entries are preserved; new page types, audiences, semantics turn-budget defaults, Mermaid-only quality settings, and knowledge-base settings are added. The project marker is updated to the current kit version.
 
 You can run the migration explicitly:
 
@@ -2943,13 +3089,13 @@ Version 0.1.x installed the complete engine inside each repository. Version 0.6.
 Recommended migration:
 
 ```bash
-# 1. Install v0.7.0 globally once
+# 1. Install v0.8.0 globally once
 node install.mjs --force
 
 # 2. Enter an existing v0.1.x repository
 cd /path/to/repository
 
-# 3. Add the v0.7.0 project marker/template without replacing existing config
+# 3. Add the v0.8.0 project marker/template without replacing existing config
 docgen init
 
 # 4. Verify the global runtime
@@ -3145,7 +3291,7 @@ Do not delete the generated page or rerun discovery. The canonical path is repai
 
 ## Provider rate limit or HTTP 429
 
-v0.7.0 retries automatically with visible exponential backoff. Review the attempt logs in `.docgen/runs/`. Reduce other concurrent Command Code sessions and lower batch sizes only when the provider still rejects batched requests.
+v0.8.0 retries automatically with visible exponential backoff. Review the attempt logs in `.docgen/runs/`. Reduce other concurrent Command Code sessions and lower batch sizes only when the provider still rejects batched requests.
 
 To make the policy more conservative:
 
@@ -3167,7 +3313,7 @@ To make the policy more conservative:
 
 ## `docgen all` appears to hang or stays quiet
 
-v0.7.0 prints a heartbeat while every Command Code child process is alive. You should see output similar to:
+v0.8.0 prints a heartbeat while every Command Code child process is alive. You should see output similar to:
 
 ```text
 [docgen] discover:. RUNNING | elapsed 1m 20s | pid 18420 | changed artifacts 7
@@ -3550,7 +3696,7 @@ For a repository that requires an exact frozen engine version, use the self-cont
 
 # Compatibility notes
 
-The v0.7.0 architecture intentionally aligns with Command Code user-level and project-level extension scopes:
+The v0.8.0 architecture intentionally aligns with Command Code user-level and project-level extension scopes:
 
 ```text
 User-level reusable components:
@@ -3681,7 +3827,7 @@ This workflow preserves the most important principle of the system:
 
 # Deep system knowledge-base target
 
-DocGen v0.7.0 does **not** treat the two benchmark home pages as the complete target. A Mintlify-style site is a hierarchy of categories, pages, and deep sections. DocGen therefore optimizes for **breadth × depth**:
+DocGen v0.8.0 does **not** treat the two benchmark home pages as the complete target. A Mintlify-style site is a hierarchy of categories, pages, and deep sections. DocGen therefore optimizes for **breadth × depth**:
 
 ```text
 Repository
@@ -3764,7 +3910,7 @@ The discovery contract requires:
 }
 ```
 
-However, cheap models can still emit semantically equivalent shapes such as `files` or `entries`. v0.7.0 normalizes these variants after discovery. If no list exists, it scans `.docgen/evidence/**` and constructs canonical `artifacts[]` deterministically. The exact v0.3.0 failure:
+However, cheap models can still emit semantically equivalent shapes such as `files` or `entries`. v0.8.0 normalizes these variants after discovery. If no list exists, it scans `.docgen/evidence/**` and constructs canonical `artifacts[]` deterministically. The exact v0.3.0 failure:
 
 ```text
 Error: .docgen/evidence/index.json missing required key: artifacts

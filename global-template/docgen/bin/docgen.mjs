@@ -30,6 +30,14 @@ const systemPath = path.join(root, '.docgen', 'model', 'system.json');
 const businessPath = path.join(root, '.docgen', 'model', 'business.json');
 const flowsPath = path.join(root, '.docgen', 'model', 'flows.json');
 const catalogsPath = path.join(root, '.docgen', 'model', 'catalogs.json');
+const securityPath = path.join(root, '.docgen', 'model', 'security.json');
+const operationsPath = path.join(root, '.docgen', 'model', 'operations.json');
+const testingPath = path.join(root, '.docgen', 'model', 'testing.json');
+const dataGovernancePath = path.join(root, '.docgen', 'model', 'data-governance.json');
+const decisionsPath = path.join(root, '.docgen', 'model', 'decisions.json');
+const configurationPath = path.join(root, '.docgen', 'model', 'configuration.json');
+const changeImpactPath = path.join(root, '.docgen', 'model', 'change-impact.json');
+const ownershipPath = path.join(root, '.docgen', 'model', 'ownership.json');
 const auditIndexPath = path.join(root, '.docgen', 'audit', 'index.json');
 const configPath = path.join(root, '.docgen', 'config', 'documentation.json');
 const fingerprintsPath = path.join(root, '.docgen', 'state', 'fingerprints.json');
@@ -41,7 +49,13 @@ const traceabilityIndexPath = path.join(traceabilityRoot, 'index.json');
 const contradictionsPath = path.join(traceabilityRoot, 'contradictions.json');
 const duplicatesPath = path.join(traceabilityRoot, 'duplicates.json');
 const freshnessPath = path.join(traceabilityRoot, 'freshness.json');
+const sourceInventoryPath = path.join(root, '.docgen', 'state', 'source-inventory.json');
+const sourceFilesPath = path.join(root, '.docgen', 'state', 'source-files.txt');
+const ignoreReportPath = path.join(root, '.docgen', 'state', 'ignore-report.json');
 let sourceSnapshotCache = null;
+let sourceInventoryCache = null;
+const gitIgnoreSingleCache = new Map();
+const ignoreRulesCache = new Map();
 
 function fail(message, code = 1) { console.error(`ERROR: ${message}`); process.exit(code); }
 function exists(relOrAbs) { return fs.existsSync(path.isAbsolute(relOrAbs) ? relOrAbs : path.join(root, relOrAbs)); }
@@ -65,6 +79,10 @@ function updateStage(stage, status, details = {}) {
   const state = loadState();
   state.schemaVersion = '1.0'; state.kitVersion = kitVersion; state.updatedAt = now();
   state.stages ??= {}; state.stages[stage] = { status, updatedAt: now(), ...details };
+  if (status === 'completed') {
+    const downstream = { discover:['analyze','semantics','enterprise','plan','generate','audit'], analyze:['semantics','enterprise','plan','generate','audit'], semantics:['enterprise','plan','generate','audit'], enterprise:['plan','generate','audit'], plan:['generate','audit'] }[stage] ?? [];
+    for (const next of downstream) state.stages[next] = { ...(state.stages[next] ?? {}), status:'pending', invalidatedBy:stage, updatedAt:now() };
+  }
   writeJson(statePath, state);
 }
 
@@ -80,7 +98,7 @@ function loadConfig() {
 function mergeAdditiveDefaults(current, defaults, keyPath = '') {
   if (Array.isArray(defaults)) {
     if (!Array.isArray(current)) return defaults;
-    const unionPaths = new Set(['audiences', 'pageTypes', 'sourceExtensions', 'exclude']);
+    const unionPaths = new Set(['audiences', 'pageTypes', 'sourceExtensions', 'exclude', 'quality.requiredCoverageTagsWhenEvidenceExists', 'enterpriseDepth.requiredCoverageTagsWhenEvidenceExists', 'enterpriseDepth.passes', 'enterpriseDepth.models']);
     if (unionPaths.has(keyPath)) return [...new Set([...current, ...defaults])];
     return current;
   }
@@ -577,6 +595,109 @@ function normalizeCatalogsObject(input = {}) {
     metadata: obj.metadata ?? {}
   };
 }
+
+const ENTERPRISE_MODEL_SPECS = {
+  security: {
+    arrays: {
+      trustBoundaries: ['boundaries', 'securityBoundaries'], principals: ['actors', 'identities', 'subjects'],
+      authenticationFlows: ['authnFlows', 'loginFlows'], authorizationRules: ['authzRules', 'accessRules', 'permissionsRules'],
+      permissions: ['rolesPermissions', 'accessMatrix'], serviceIdentities: ['serviceAccounts', 'machineIdentities'],
+      secrets: ['credentials', 'keys', 'certificates'], sensitiveData: ['pii', 'protectedData', 'classifiedData'],
+      threats: ['risks', 'abuseCases'], controls: ['securityControls', 'mitigations'], unknowns: ['gaps', 'openQuestions']
+    },
+    kinds: { trustBoundaries:'trust-boundary', principals:'principal', authenticationFlows:'authentication-flow', authorizationRules:'authorization-rule', permissions:'permission', serviceIdentities:'service-identity', secrets:'secret', sensitiveData:'sensitive-data', threats:'threat', controls:'security-control', unknowns:'unknown' },
+    flowKeys: new Set(['authenticationFlows'])
+  },
+  operations: {
+    arrays: {
+      runtimeComponents:['runtimes','runtimeServices','runtimeNodes'], healthChecks:['health','readiness','liveness'], observabilitySignals:['signals','logsMetricsTraces'],
+      slis:['serviceLevelIndicators'], slos:['serviceLevelObjectives'], alerts:['alarms'], capacityLimits:['limits','quotas'], scalingSignals:['autoscalingSignals'],
+      failureModes:['failures'], recoveryProcedures:['recovery','remediation'], backups:['backupRestore'], deployments:['deploymentStrategies','rollouts'],
+      runbooks:['operationalRunbooks'], unknowns:['gaps','openQuestions']
+    },
+    kinds: { runtimeComponents:'runtime-component', healthChecks:'health-check', observabilitySignals:'observability-signal', slis:'sli', slos:'slo', alerts:'alert', capacityLimits:'capacity-limit', scalingSignals:'scaling-signal', failureModes:'failure-mode', recoveryProcedures:'recovery-procedure', backups:'backup', deployments:'deployment', runbooks:'runbook', unknowns:'unknown' },
+    flowKeys: new Set(['recoveryProcedures','deployments','runbooks'])
+  },
+  testing: {
+    arrays: {
+      testSuites:['suites'], testTypes:['testingTypes','levels'], fixtures:['testFixtures'], testData:['testDatasets'], environments:['testEnvironments'],
+      commands:['testCommands'], coverageGaps:['gaps','untestedAreas'], contractTests:['contracts'], failureInjection:['chaosTests','faultInjection'],
+      qualityGates:['ciGates','testGates'], unknowns:['openQuestions']
+    },
+    kinds: { testSuites:'test-suite', testTypes:'test-type', fixtures:'test-fixture', testData:'test-data', environments:'test-environment', commands:'test-command', coverageGaps:'coverage-gap', contractTests:'contract-test', failureInjection:'failure-injection', qualityGates:'test-quality-gate', unknowns:'unknown' },
+    flowKeys: new Set()
+  },
+  dataGovernance: {
+    arrays: {
+      dataEntities:['entities','records'], ownership:['dataOwners'], sourcesOfTruth:['authoritativeSources'], classifications:['dataClassifications'],
+      retentionPolicies:['retention','deletionPolicies'], transactionBoundaries:['transactions'], consistencyModels:['consistency'], concurrencyControls:['locking','concurrency'],
+      idempotencyRules:['idempotency'], reconciliationProcesses:['reconciliation'], lineageFlows:['lineage','dataLineage'], migrationPolicies:['schemaEvolution','migrations'],
+      auditRequirements:['auditability'], unknowns:['gaps','openQuestions']
+    },
+    kinds: { dataEntities:'data-entity', ownership:'data-ownership', sourcesOfTruth:'source-of-truth', classifications:'data-classification', retentionPolicies:'retention-policy', transactionBoundaries:'transaction-boundary', consistencyModels:'consistency-model', concurrencyControls:'concurrency-control', idempotencyRules:'idempotency-rule', reconciliationProcesses:'reconciliation-process', lineageFlows:'data-lineage-flow', migrationPolicies:'migration-policy', auditRequirements:'data-audit-requirement', unknowns:'unknown' },
+    flowKeys: new Set(['reconciliationProcesses','lineageFlows','migrationPolicies'])
+  },
+  decisions: {
+    arrays: {
+      recordedDecisions:['adrs','architectureDecisions'], inferredDecisions:['inferences'], alternatives:['options'], tradeoffs:['tradeOffs'], constraints:['decisionConstraints'],
+      consequences:['implications'], supersededDecisions:['deprecatedDecisions'], unknowns:['unknownRationale','gaps','openQuestions']
+    },
+    kinds: { recordedDecisions:'recorded-decision', inferredDecisions:'inferred-decision', alternatives:'decision-alternative', tradeoffs:'tradeoff', constraints:'decision-constraint', consequences:'decision-consequence', supersededDecisions:'superseded-decision', unknowns:'unknown' },
+    flowKeys: new Set()
+  },
+  configuration: {
+    arrays: {
+      settings:['properties','configurations'], environments:['environmentMatrix'], featureFlags:['flags'], secrets:['secretSettings'], runtimeTuning:['tuning'],
+      validationRules:['configValidation'], reloadBehavior:['reload','restartRequirements'], deprecations:['deprecatedSettings'], unknowns:['gaps','openQuestions']
+    },
+    kinds: { settings:'configuration-setting', environments:'environment-configuration', featureFlags:'feature-flag', secrets:'configuration-secret', runtimeTuning:'runtime-tuning', validationRules:'configuration-validation', reloadBehavior:'reload-behavior', deprecations:'configuration-deprecation', unknowns:'unknown' },
+    flowKeys: new Set()
+  },
+  changeImpact: {
+    arrays: {
+      changeSurfaces:['changePoints','symbols'], impactEdges:['dependencies','blastRadius'], compatibilityBoundaries:['compatibility'], extensionPoints:['safeExtensionPoints'],
+      migrationRisks:['risks'], affectedTests:['tests'], affectedOperations:['operationalImpact'], affectedContracts:['contracts'], unknowns:['gaps','openQuestions']
+    },
+    kinds: { changeSurfaces:'change-surface', impactEdges:'impact-edge', compatibilityBoundaries:'compatibility-boundary', extensionPoints:'extension-point', migrationRisks:'migration-risk', affectedTests:'affected-test', affectedOperations:'operational-impact', affectedContracts:'affected-contract', unknowns:'unknown' },
+    flowKeys: new Set()
+  },
+  ownership: {
+    arrays: {
+      teams:['owners','groups'], responsibilities:['duties'], raciAssignments:['raci'], componentOwners:['serviceOwners','moduleOwners'], dataOwners:['informationOwners'],
+      operationalOwners:['onCallOwners','runbookOwners'], approvalAuthorities:['approvers'], escalationPaths:['escalations'], unknowns:['gaps','openQuestions']
+    },
+    kinds: { teams:'team', responsibilities:'responsibility', raciAssignments:'raci-assignment', componentOwners:'component-owner', dataOwners:'data-owner', operationalOwners:'operational-owner', approvalAuthorities:'approval-authority', escalationPaths:'escalation-path', unknowns:'unknown' },
+    flowKeys: new Set(['escalationPaths'])
+  }
+};
+function normalizeEnterpriseObject(input = {}, specName) {
+  const obj = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  const spec = ENTERPRISE_MODEL_SPECS[specName];
+  if (!spec) throw new Error(`Unknown enterprise model spec: ${specName}`);
+  const out = { schemaVersion:'1.0', generatedAt:obj.generatedAt ?? obj.createdAt ?? obj.updatedAt ?? obj.timestamp ?? now() };
+  for (const [key, aliases] of Object.entries(spec.arrays)) {
+    out[key] = normalizeTypedArray(obj, key, aliases, spec.kinds[key], spec.flowKeys.has(key) ? { steps:true, branches:true } : {});
+  }
+  out.metadata = obj.metadata ?? {};
+  return out;
+}
+function assertEnterpriseModel(fileName, obj, specName) {
+  const spec = ENTERPRISE_MODEL_SPECS[specName];
+  const keys = Object.keys(spec.arrays);
+  assertCanonicalModel(fileName, obj, keys);
+  const groups = {};
+  for (const key of keys) { assertTypedItems(`${fileName}.${key}`, obj[key], spec.kinds[key]); groups[key] = obj[key]; }
+  assertGlobalUniqueIds(fileName, groups);
+  return obj;
+}
+function normalizeSecurityObject(x={}) { return normalizeEnterpriseObject(x,'security'); }
+function normalizeOperationsObject(x={}) { return normalizeEnterpriseObject(x,'operations'); }
+function normalizeTestingObject(x={}) { return normalizeEnterpriseObject(x,'testing'); }
+function normalizeDataGovernanceObject(x={}) { return normalizeEnterpriseObject(x,'dataGovernance'); }
+function normalizeDecisionsObject(x={}) { return normalizeEnterpriseObject(x,'decisions'); }
+function normalizeConfigurationObject(x={}) { return normalizeEnterpriseObject(x,'configuration'); }
+function normalizeChangeImpactObject(x={}) { return normalizeEnterpriseObject(x,'changeImpact'); }
+function normalizeOwnershipObject(x={}) { return normalizeEnterpriseObject(x,'ownership'); }
 function normalizeUpdatePlanObject(input = {}, changedPaths = []) {
   const obj = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
   const normalizedChanges = canonicalArray(obj, 'changedPaths', ['changedFiles', 'paths', 'changes']);
@@ -637,7 +758,7 @@ function assertTypedItems(name, items, expectedKind) {
     for (const [j, ev] of item.evidence.entries()) {
       if (!ev || typeof ev !== 'object' || (!ev.path && !ev.symbol)) throw new Error(`${p}.evidence[${j}] requires path or symbol.`);
       if (ev.path && path.isAbsolute(ev.path)) throw new Error(`${p}.evidence[${j}].path must be repository-relative.`);
-      if (ev.path) { const resolved = normalizeReference(ev.path, aliases); if (!exists(resolved)) throw new Error(`${p}.evidence[${j}] cannot resolve: ${ev.path}`); }
+      if (ev.path) { const resolved = normalizeReference(ev.path, aliases); if (!exists(resolved)) throw new Error(`${p}.evidence[${j}] cannot resolve: ${ev.path}`); const ignored = ignoreDecision(resolved, false); if (loadConfig().ignore?.rejectIgnoredEvidence !== false && ignored.ignored) throw new Error(`${p}.evidence[${j}] references ignored source ${ev.path} (${ignored.reason}).`); }
     }
   }
 }
@@ -670,7 +791,7 @@ function currentSourceSnapshot(force = false) {
   const branch = gitValue(['rev-parse', '--abbrev-ref', 'HEAD']);
   const dirtyOutput = gitValue(['status', '--porcelain']);
   let sourceFingerprint = null;
-  try { sourceFingerprint = sha256Text(JSON.stringify(makeSnapshot().files)); } catch {}
+  try { const snapshot=makeSnapshot(); sourceFingerprint = sha256Text(JSON.stringify({files:snapshot.files,ignorePolicyHash:snapshot.ignorePolicyHash})); } catch {}
   sourceSnapshotCache = { capturedAt: now(), commit, branch, dirty: dirtyOutput === null ? null : dirtyOutput.length > 0, sourceFingerprint };
   return { ...sourceSnapshotCache };
 }
@@ -696,6 +817,7 @@ function normalizeClaim(value, page, index = 0) {
     evidence,
     sourceModelRefs: modelRefs,
     intentionalDuplicate: Boolean(scalarValue(obj, ['intentionalDuplicate', 'repeatedForOrientation'], false)),
+    exclusivePredicate: Boolean(scalarValue(obj, ['exclusivePredicate', 'singleValued', 'exclusive'], false)) || String(scalarValue(obj, ['cardinality'], '')).toLowerCase() === 'one',
     notes: scalarValue(obj, ['notes', 'note'], null),
     unknowns: canonicalArray(obj, 'unknowns', ['gaps']).map(String),
     tags: normalizeStringRefs(canonicalArray(obj, 'tags', ['labels']))
@@ -1039,6 +1161,14 @@ function manifestCoverageGaps(manifest) {
   const business = normalizeBusinessObject(loadOptionalJson(businessPath, {}));
   const flows = normalizeFlowsObject(loadOptionalJson(flowsPath, {}));
   const catalogs = normalizeCatalogsObject(loadOptionalJson(catalogsPath, {}));
+  const security = normalizeSecurityObject(loadOptionalJson(securityPath, {}));
+  const operations = normalizeOperationsObject(loadOptionalJson(operationsPath, {}));
+  const testing = normalizeTestingObject(loadOptionalJson(testingPath, {}));
+  const dataGovernance = normalizeDataGovernanceObject(loadOptionalJson(dataGovernancePath, {}));
+  const decisions = normalizeDecisionsObject(loadOptionalJson(decisionsPath, {}));
+  const configuration = normalizeConfigurationObject(loadOptionalJson(configurationPath, {}));
+  const changeImpact = normalizeChangeImpactObject(loadOptionalJson(changeImpactPath, {}));
+  const ownership = normalizeOwnershipObject(loadOptionalJson(ownershipPath, {}));
   const required = [['system-overview', true], ['architecture', true]];
   if ((business.capabilities ?? []).length) required.push(['business-domain', true]);
   if ((business.businessRules ?? []).length) required.push(['business-rules', true]);
@@ -1048,6 +1178,17 @@ function manifestCoverageGaps(manifest) {
   if ((catalogs.endpoints ?? []).length) required.push(['endpoint-catalog', true]);
   if ((catalogs.messageHandlers ?? []).length) required.push(['message-handler-catalog', true]);
   if ((catalogs.externalDependencies ?? []).length) required.push(['external-dependency-catalog', true]);
+  if (security.trustBoundaries.length || security.authenticationFlows.length) required.push(['security-trust-boundaries', true]);
+  if (security.authorizationRules.length || security.permissions.length) required.push(['authorization-model', true]);
+  if (Object.values(dataGovernance).some((v)=>Array.isArray(v)&&v.length)) required.push(['data-governance', true]);
+  if (dataGovernance.transactionBoundaries.length || dataGovernance.consistencyModels.length || dataGovernance.concurrencyControls.length || dataGovernance.idempotencyRules.length) required.push(['consistency-transactions', true]);
+  if (operations.observabilitySignals.length || operations.healthChecks.length || operations.alerts.length || operations.slis.length || operations.slos.length) required.push(['operations-observability', true]);
+  if (operations.failureModes.length || operations.recoveryProcedures.length || operations.backups.length) required.push(['failure-recovery', true]);
+  if (Object.values(testing).some((v)=>Array.isArray(v)&&v.length)) required.push(['testing-strategy', true]);
+  if (configuration.settings.length || configuration.environments.length || configuration.featureFlags.length) required.push(['configuration-matrix', true]);
+  if (decisions.recordedDecisions.length || decisions.inferredDecisions.length) required.push(['architecture-decisions', true]);
+  if (changeImpact.changeSurfaces.length || changeImpact.impactEdges.length || changeImpact.compatibilityBoundaries.length) required.push(['change-impact', true]);
+  if (ownership.teams.length || ownership.responsibilities.length || ownership.componentOwners.length || ownership.dataOwners.length || ownership.operationalOwners.length) required.push(['ownership-responsibilities', true]);
   return required.filter(([tag]) => !tags.has(tag)).map(([tag]) => tag);
 }
 function writeNavigationSummary(manifest) {
@@ -1125,12 +1266,12 @@ function validateStatic() {
     try { validateJsonFile(f); } catch (e) { errors.push(e.message); }
   }
   validateSkills(errors);
-  const requiredAgents = ['doc-discoverer', 'doc-architect', 'doc-domain-analyst', 'doc-planner', 'doc-writer', 'doc-auditor'];
+  const requiredAgents = ['doc-discoverer', 'doc-architect', 'doc-domain-analyst', 'doc-enterprise-analyst', 'doc-planner', 'doc-writer', 'doc-auditor'];
   for (const a of requiredAgents) if (!fs.existsSync(path.join(commandCodeHome, 'agents', `${a}.md`))) errors.push(`Missing global agent: ${a}`);
-  const requiredCommands = ['docgen-init', 'docgen-doctor', 'docgen-discover', 'docgen-analyze', 'docgen-plan', 'docgen-generate', 'docgen-audit', 'docgen-fix', 'docgen-update', 'docgen-status', 'docgen-enrich', 'docgen-quality', 'docgen-semantics', 'docgen-preflight', 'docgen-resume', 'docgen-contract-test', 'docgen-traceability'];
+  const requiredCommands = ['docgen-init', 'docgen-doctor', 'docgen-discover', 'docgen-analyze', 'docgen-plan', 'docgen-generate', 'docgen-audit', 'docgen-fix', 'docgen-update', 'docgen-status', 'docgen-enrich', 'docgen-quality', 'docgen-semantics', 'docgen-preflight', 'docgen-resume', 'docgen-contract-test', 'docgen-traceability', 'docgen-enterprise', 'docgen-ignore'];
   for (const c of requiredCommands) if (!fs.existsSync(path.join(commandCodeHome, 'commands', `${c}.md`))) errors.push(`Missing global command: ${c}`);
-  for (const prompt of ['discover.md', 'analyze.md', 'semantics.md', 'plan.md', 'generate.md', 'enrich.md', 'audit.md', 'fix.md', 'update-impact.md', 'generate-batch.md', 'enrich-batch.md', 'audit-batch.md']) if (!fs.existsSync(assetFile('prompts', prompt))) errors.push(`Missing prompt: ${prompt}`);
-  for (const schema of ['evidence-artifact.schema.json', 'evidence-index.schema.json', 'component.schema.json', 'workflow.schema.json', 'system.schema.json', 'business.schema.json', 'flows.schema.json', 'catalogs.schema.json', 'manifest.schema.json', 'audit-page.schema.json', 'audit-index.schema.json', 'update-plan.schema.json', 'semantic-item.schema.json', 'traceability.schema.json', 'quality-summary.schema.json']) {
+  for (const prompt of ['discover.md', 'analyze.md', 'semantics.md', 'enterprise.md', 'plan.md', 'generate.md', 'enrich.md', 'audit.md', 'fix.md', 'update-impact.md', 'generate-batch.md', 'enrich-batch.md', 'audit-batch.md']) if (!fs.existsSync(assetFile('prompts', prompt))) errors.push(`Missing prompt: ${prompt}`);
+  for (const schema of ['evidence-artifact.schema.json', 'evidence-index.schema.json', 'component.schema.json', 'workflow.schema.json', 'system.schema.json', 'business.schema.json', 'flows.schema.json', 'catalogs.schema.json', 'manifest.schema.json', 'audit-page.schema.json', 'audit-index.schema.json', 'update-plan.schema.json', 'semantic-item.schema.json', 'traceability.schema.json', 'quality-summary.schema.json', 'security.schema.json', 'operations.schema.json', 'testing.schema.json', 'data-governance.schema.json', 'decisions.schema.json', 'configuration.schema.json', 'change-impact.schema.json', 'ownership.schema.json']) {
     try { validateJsonFile(assetFile('schemas', schema)); } catch (e) { errors.push(e.message); }
   }
   if (errors.length) {
@@ -1148,6 +1289,7 @@ function validateGenerated() {
   try { if (fs.existsSync(businessPath)) normalizeJsonFile(businessPath, normalizeBusinessObject, assertBusinessModel); } catch (e) { errors.push(e.message); }
   try { if (fs.existsSync(flowsPath)) normalizeJsonFile(flowsPath, normalizeFlowsObject, assertFlowsModel); } catch (e) { errors.push(e.message); }
   try { if (fs.existsSync(catalogsPath)) normalizeJsonFile(catalogsPath, normalizeCatalogsObject, assertCatalogsModel); } catch (e) { errors.push(e.message); }
+  for (const file of ENTERPRISE_PASSES.flatMap((p)=>p.outputs)) { try { if (fs.existsSync(file)) normalizeEnterpriseFile(file); } catch (e) { errors.push(e.message); } }
   if (fs.existsSync(manifestPath)) {
     try {
       const manifest = normalizeManifest();
@@ -1173,12 +1315,15 @@ function validateGenerated() {
 }
 
 async function doDiscover(scope = '.', progressLabel = '') {
-  updateStage('discover', 'running', { scope });
+  const normalizedScope = normalizeRepoPath(scope);
+  if (normalizedScope && normalizedScope !== '.' && fs.existsSync(path.join(root, normalizedScope))) { const d=ignoreDecision(normalizedScope, fs.statSync(path.join(root, normalizedScope)).isDirectory()); if (d.ignored) fail(`Discovery scope is ignored: ${scope} (${d.reason}).`); }
+  const inventory = writeSourceInventory();
+  updateStage('discover', 'running', { scope, includedFiles: inventory.includedCount });
   try {
     const evidenceIndex = await runContractStage('discover', [path.dirname(evidenceIndexPath)],
-      (reset) => runCommandCode('discover', renderPrompt('discover.md', { SCOPE: scope }), scope, progressLabel, { beforeRetry: reset }),
+      (reset) => runCommandCode('discover', renderPrompt('discover.md', { SCOPE: scope, SOURCE_INVENTORY: rel(sourceFilesPath), IGNORE_REPORT: rel(ignoreReportPath) }), scope, progressLabel, { beforeRetry: reset }),
       () => normalizeEvidenceIndex());
-    updateStage('discover', 'completed', { scope, artifactCount: evidenceIndex.artifacts.length });
+    updateStage('discover', 'completed', { scope, artifactCount: evidenceIndex.artifacts.length, includedFiles: inventory.includedCount });
   } catch (e) { updateStage('discover', 'failed', { scope, error: e.message }); throw e; }
 }
 async function doAnalyze(scope = 'all current evidence', progressLabel = '') {
@@ -1207,12 +1352,54 @@ async function doSemantics(progressLabel = '') {
     updateStage('semantics', 'completed', { endpoints: catalogs.endpoints.length, messageHandlers: catalogs.messageHandlers.length, externalDependencies: catalogs.externalDependencies.length, businessRules: business.businessRules.length, flows: Object.values(flows).filter(Array.isArray).reduce((n, x) => n + x.length, 0) });
   } catch (e) { updateStage('semantics', 'failed', { error: e.message }); throw e; }
 }
+
+const ENTERPRISE_PASSES = [
+  { id:'governance', outputs:[securityPath, ownershipPath], prompt:'enterprise.md' },
+  { id:'operability', outputs:[operationsPath, testingPath], prompt:'enterprise.md' },
+  { id:'data-and-configuration', outputs:[dataGovernancePath, configurationPath], prompt:'enterprise.md' },
+  { id:'evolution', outputs:[decisionsPath, changeImpactPath], prompt:'enterprise.md' }
+];
+function normalizeEnterpriseFile(file) {
+  const base = path.basename(file, '.json');
+  const map = {
+    security:[normalizeSecurityObject, (x)=>assertEnterpriseModel('security.json',x,'security')],
+    operations:[normalizeOperationsObject, (x)=>assertEnterpriseModel('operations.json',x,'operations')],
+    testing:[normalizeTestingObject, (x)=>assertEnterpriseModel('testing.json',x,'testing')],
+    'data-governance':[normalizeDataGovernanceObject, (x)=>assertEnterpriseModel('data-governance.json',x,'dataGovernance')],
+    decisions:[normalizeDecisionsObject, (x)=>assertEnterpriseModel('decisions.json',x,'decisions')],
+    configuration:[normalizeConfigurationObject, (x)=>assertEnterpriseModel('configuration.json',x,'configuration')],
+    'change-impact':[normalizeChangeImpactObject, (x)=>assertEnterpriseModel('change-impact.json',x,'changeImpact')],
+    ownership:[normalizeOwnershipObject, (x)=>assertEnterpriseModel('ownership.json',x,'ownership')]
+  };
+  if (!map[base]) throw new Error(`Unknown enterprise artifact: ${file}`);
+  return normalizeJsonFile(file, map[base][0], map[base][1]);
+}
+async function doEnterprise(progressLabel = '') {
+  if (!fs.existsSync(systemPath) || !fs.existsSync(businessPath) || !fs.existsSync(catalogsPath)) fail('Run analyze and semantics first.');
+  updateStage('enterprise', 'running', { passCount: ENTERPRISE_PASSES.length });
+  try {
+    for (let i=0;i<ENTERPRISE_PASSES.length;i++) {
+      const pass=ENTERPRISE_PASSES[i];
+      printItemProgress('enterprise pass', i+1, ENTERPRISE_PASSES.length, pass.id);
+      const outputContracts=pass.outputs.map((f)=>rel(f));
+      await runContractStage(`enterprise-${pass.id}`, pass.outputs,
+        (reset)=>runCommandCode('enterprise', renderPrompt(pass.prompt, { ENTERPRISE_PASS:pass.id, OUTPUT_PATHS_JSON:JSON.stringify(outputContracts,null,2) }), pass.id, progressLabel || `enterprise ${i+1}/${ENTERPRISE_PASSES.length}`, { beforeRetry:reset }),
+        ()=>pass.outputs.map(normalizeEnterpriseFile));
+    }
+    const counts={};
+    for (const file of ENTERPRISE_PASSES.flatMap((p)=>p.outputs)) { const obj=normalizeEnterpriseFile(file); counts[path.basename(file,'.json')]=Object.values(obj).filter(Array.isArray).reduce((n,a)=>n+a.length,0); }
+    updateStage('enterprise','completed',{passCount:ENTERPRISE_PASSES.length,models:counts});
+  } catch(e) { updateStage('enterprise','failed',{error:e.message}); throw e; }
+}
 async function doPlan(progressLabel = '') {
   if (!fs.existsSync(systemPath)) fail('Run analyze first.');
   normalizeJsonFile(systemPath, normalizeSystemObject, assertSystemModel);
   if (fs.existsSync(businessPath)) normalizeJsonFile(businessPath, normalizeBusinessObject, assertBusinessModel);
   if (fs.existsSync(flowsPath)) normalizeJsonFile(flowsPath, normalizeFlowsObject, assertFlowsModel);
   if (fs.existsSync(catalogsPath)) normalizeJsonFile(catalogsPath, normalizeCatalogsObject, assertCatalogsModel);
+  if (loadConfig().enterpriseDepth?.enabled !== false) {
+    for (const file of ENTERPRISE_PASSES.flatMap((p)=>p.outputs)) { if (!fs.existsSync(file)) fail(`Missing ${rel(file)}. Run enterprise first.`); normalizeEnterpriseFile(file); }
+  }
   updateStage('plan', 'running');
   try {
     await runContractStage('plan', [manifestPath],
@@ -1316,6 +1503,10 @@ function itemRefsForPage(page) {
   const business = normalizeBusinessObject(loadOptionalJson(businessPath, {}));
   const flows = normalizeFlowsObject(loadOptionalJson(flowsPath, {}));
   const catalogs = normalizeCatalogsObject(loadOptionalJson(catalogsPath, {}));
+  const security = normalizeSecurityObject(loadOptionalJson(securityPath, {})); const operations = normalizeOperationsObject(loadOptionalJson(operationsPath, {}));
+  const testing = normalizeTestingObject(loadOptionalJson(testingPath, {})); const dataGovernance = normalizeDataGovernanceObject(loadOptionalJson(dataGovernancePath, {}));
+  const decisions = normalizeDecisionsObject(loadOptionalJson(decisionsPath, {})); const configuration = normalizeConfigurationObject(loadOptionalJson(configurationPath, {}));
+  const changeImpact = normalizeChangeImpactObject(loadOptionalJson(changeImpactPath, {})); const ownership = normalizeOwnershipObject(loadOptionalJson(ownershipPath, {}));
   const tags = new Set(page.coverageTags ?? []); const expected = { model: [], catalog: [], branch: [] };
   const add = (target, items) => target.push(...(items ?? []).map((x) => x.id));
   if (tags.has('system-overview') || tags.has('architecture')) add(expected.model, [...system.components, ...system.relationships, ...system.workflows]);
@@ -1327,6 +1518,17 @@ function itemRefsForPage(page) {
   if (tags.has('endpoint-catalog')) add(expected.catalog, catalogs.endpoints);
   if (tags.has('message-handler-catalog')) add(expected.catalog, catalogs.messageHandlers);
   if (tags.has('external-dependency-catalog')) add(expected.catalog, catalogs.externalDependencies);
+  if (tags.has('security-trust-boundaries')) add(expected.model, [...security.trustBoundaries,...security.principals,...security.authenticationFlows,...security.serviceIdentities,...security.threats,...security.controls]);
+  if (tags.has('authorization-model')) add(expected.model, [...security.authorizationRules,...security.permissions]);
+  if (tags.has('data-governance')) add(expected.model, Object.values(dataGovernance).filter(Array.isArray).flat());
+  if (tags.has('consistency-transactions')) add(expected.model, [...dataGovernance.transactionBoundaries,...dataGovernance.consistencyModels,...dataGovernance.concurrencyControls,...dataGovernance.idempotencyRules,...dataGovernance.reconciliationProcesses]);
+  if (tags.has('operations-observability')) add(expected.model, [...operations.runtimeComponents,...operations.healthChecks,...operations.observabilitySignals,...operations.slis,...operations.slos,...operations.alerts,...operations.capacityLimits,...operations.scalingSignals]);
+  if (tags.has('failure-recovery')) add(expected.model, [...operations.failureModes,...operations.recoveryProcedures,...operations.backups,...operations.runbooks]);
+  if (tags.has('testing-strategy')) add(expected.model, Object.values(testing).filter(Array.isArray).flat());
+  if (tags.has('configuration-matrix')) add(expected.model, Object.values(configuration).filter(Array.isArray).flat());
+  if (tags.has('architecture-decisions')) add(expected.model, Object.values(decisions).filter(Array.isArray).flat());
+  if (tags.has('change-impact')) add(expected.model, Object.values(changeImpact).filter(Array.isArray).flat());
+  if (tags.has('ownership-responsibilities')) add(expected.model, Object.values(ownership).filter(Array.isArray).flat());
   return { model: [...new Set(expected.model)], catalog: [...new Set(expected.catalog)], branch: [...new Set(expected.branch)] };
 }
 function ratio(covered, expected) { return expected <= 0 ? 1 : Math.min(1, covered / expected); }
@@ -1334,7 +1536,7 @@ function pageSemanticMetrics(page, text) {
   const trace = ensurePageTraceability(page);
   const claims = trace.claims ?? [];
   const knownIds = new Set();
-  for (const model of [normalizeSystemObject(loadOptionalJson(systemPath, {})), normalizeBusinessObject(loadOptionalJson(businessPath, {})), normalizeFlowsObject(loadOptionalJson(flowsPath, {})), normalizeCatalogsObject(loadOptionalJson(catalogsPath, {}))]) for (const value of Object.values(model)) if (Array.isArray(value)) for (const item of value) if (item?.id) knownIds.add(normalizeRefKey(item.id));
+  for (const model of [normalizeSystemObject(loadOptionalJson(systemPath, {})), normalizeBusinessObject(loadOptionalJson(businessPath, {})), normalizeFlowsObject(loadOptionalJson(flowsPath, {})), normalizeCatalogsObject(loadOptionalJson(catalogsPath, {})), normalizeSecurityObject(loadOptionalJson(securityPath, {})), normalizeOperationsObject(loadOptionalJson(operationsPath, {})), normalizeTestingObject(loadOptionalJson(testingPath, {})), normalizeDataGovernanceObject(loadOptionalJson(dataGovernancePath, {})), normalizeDecisionsObject(loadOptionalJson(decisionsPath, {})), normalizeConfigurationObject(loadOptionalJson(configurationPath, {})), normalizeChangeImpactObject(loadOptionalJson(changeImpactPath, {})), normalizeOwnershipObject(loadOptionalJson(ownershipPath, {}))]) for (const value of Object.values(model)) if (Array.isArray(value)) for (const item of value) if (item?.id) knownIds.add(normalizeRefKey(item.id));
   const aliases = buildReferenceAliases();
   const evidenceValid = (ev) => { const ref=normalizeRefKey(ev?.path); if(!ref) return Boolean(ev?.symbol); const resolved=normalizeReference(ref, aliases); if(!exists(resolved)) return false; if(ev?.startLine){ try{const lines=fs.readFileSync(path.join(root,resolved),'utf8').split(/\r?\n/).length; if(ev.startLine>lines || (ev.endLine&&ev.endLine>lines)) return false;}catch{return false;} } return true; };
   const modelRefValid = (ref) => knownIds.has(normalizeRefKey(ref));
@@ -1458,8 +1660,11 @@ function rebuildTraceabilityIndex() {
   const duplicateGroups = [...byDuplicate.entries()].filter(([, group]) => group.filter((x) => !x.intentionalDuplicate).length > 1).map(([key, group], i) => ({ id: `duplicate-${i + 1}`, key, claims: group.map((x) => ({ id: x.id, pageId: x.pageId, statement: x.statement, intentionalDuplicate: x.intentionalDuplicate })) }));
   const contradictions = [];
   for (const [key, group] of bySemantic.entries()) {
-    const factual = group.filter((x) => x.classification !== 'UNKNOWN'); const values = new Set(factual.map(claimValueKey));
-    if (values.size > 1) contradictions.push({ id: `contradiction-${contradictions.length + 1}`, key, severity: factual.some((x) => x.classification === 'FACT') ? 'high' : 'medium', claims: factual.map((x) => ({ id: x.id, pageId: x.pageId, statement: x.statement, classification: x.classification, object: x.object, polarity: x.polarity })) });
+    const factual = group.filter((x) => x.classification !== 'UNKNOWN');
+    const byObject = new Map(); for (const claim of factual) { const objectKey=normalizeHeading(String(claim.object ?? '')); if(!byObject.has(objectKey))byObject.set(objectKey,[]); byObject.get(objectKey).push(claim); }
+    const polarityConflict=[...byObject.values()].some((claims)=>new Set(claims.map((x)=>x.polarity)).size>1);
+    const exclusiveConflict=factual.some((x)=>x.exclusivePredicate) && new Set(factual.map((x)=>normalizeHeading(String(x.object ?? '')))).size>1;
+    if (polarityConflict || exclusiveConflict) contradictions.push({ id: `contradiction-${contradictions.length + 1}`, key, severity: factual.some((x) => x.classification === 'FACT') ? 'high' : 'medium', claims: factual.map((x) => ({ id: x.id, pageId: x.pageId, statement: x.statement, classification: x.classification, object: x.object, polarity: x.polarity, exclusivePredicate:x.exclusivePredicate })) });
   }
   const currentSource = currentSourceSnapshot(true);
   const freshnessPages = pages.map((p) => ({ ...p, currentPageHash: fileSha256(path.join(root,p.pagePath)), currentInputHash: pageInputHash(findPage(p.pageId)), currentSourceSnapshot: currentSource, sourceStale: Boolean(p.sourceSnapshot?.sourceFingerprint && currentSource.sourceFingerprint && p.sourceSnapshot.sourceFingerprint !== currentSource.sourceFingerprint), stale: p.pageHash !== fileSha256(path.join(root,p.pagePath)) || p.inputHash !== pageInputHash(findPage(p.pageId)) || Boolean(p.sourceSnapshot?.sourceFingerprint && currentSource.sourceFingerprint && p.sourceSnapshot.sourceFingerprint !== currentSource.sourceFingerprint) }));
@@ -1605,19 +1810,167 @@ async function doFixAll() {
   return fixed;
 }
 
-function ignored(relPath, config) {
-  const s = relPath.replaceAll('\\', '/');
-  const prefixes = ['.git/', '.commandcode/', '.docgen/', 'docs/', 'node_modules/', 'target/', 'build/', 'dist/', 'coverage/', 'vendor/'];
-  if (prefixes.some((p) => s === p.slice(0, -1) || s.startsWith(p))) return true;
-  return false;
+function normalizeRepoPath(value) {
+  return String(value ?? '').replaceAll('\\', '/').replace(/^\.\//, '').replace(/^\/+/, '').replace(/\/+$/, '');
+}
+function regexEscape(value) { return value.replace(/[|\\{}()[\]^$+?.]/g, '\\$&'); }
+function ignorePatternRegex(pattern, anchored = false) {
+  let body = ''; let i = 0;
+  while (i < pattern.length) {
+    if (pattern[i] === '*') {
+      if (pattern[i + 1] === '*') { while (pattern[i + 1] === '*') i++; body += '.*'; }
+      else body += '[^/]*';
+    } else if (pattern[i] === '?') body += '[^/]';
+    else body += regexEscape(pattern[i]);
+    i++;
+  }
+  return new RegExp(anchored ? `^${body}(?:/.*)?$` : `(?:^|/)${body}(?:/.*)?$`);
+}
+function loadIgnoreRules(file) {
+  if (!fs.existsSync(file)) return [];
+  const stat=fs.statSync(file); const cached=ignoreRulesCache.get(file); if(cached?.mtimeMs===stat.mtimeMs)return cached.rules;
+  const rules = [];
+  for (const raw of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+    let line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    let negated = false;
+    if (line.startsWith('!')) { negated = true; line = line.slice(1); }
+    if (!line) continue;
+    const directoryOnly = line.endsWith('/');
+    if (directoryOnly) line = line.replace(/\/+$/, '');
+    const anchored = line.startsWith('/');
+    if (anchored) line = line.slice(1);
+    rules.push({ raw, pattern: line, negated, directoryOnly, anchored, regex: ignorePatternRegex(line, anchored) });
+  }
+  ignoreRulesCache.set(file,{mtimeMs:stat.mtimeMs,rules});
+  return rules;
+}
+function matchIgnoreRules(relPath, isDirectory, rules) {
+  const normalized = normalizeRepoPath(relPath);
+  let decision = null;
+  for (const rule of rules) {
+    if (rule.directoryOnly && !isDirectory && !normalized.includes(`${rule.pattern}/`) && !normalized.startsWith(`${rule.pattern}/`)) continue;
+    if (rule.regex.test(normalized)) decision = { ignored: !rule.negated, reason: `.docgenignore:${rule.raw}` };
+  }
+  return decision;
+}
+function configExcludeDecision(relPath, isDirectory, config) {
+  const normalized = normalizeRepoPath(relPath);
+  for (const raw of config.exclude ?? []) {
+    const pattern = String(raw).replaceAll('\\', '/').replace(/^\.\//, '');
+    const directoryOnly = pattern.endsWith('/**') || pattern.endsWith('/');
+    const cleaned = pattern.replace(/\/\*\*$/, '').replace(/\/+$/, '');
+    const regex = ignorePatternRegex(cleaned, cleaned.startsWith('/'));
+    if (regex.test(normalized) || (directoryOnly && (normalized === cleaned || normalized.startsWith(`${cleaned}/`)))) return { ignored: true, reason: `config.exclude:${raw}` };
+  }
+  return null;
+}
+function gitRepositoryAvailable() {
+  if (!commandExists('git')) return false;
+  const marker = path.join(root, '.git');
+  if (fs.existsSync(marker)) return true;
+  const r = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: root, encoding: 'utf8', shell: process.platform === 'win32' });
+  return r.status === 0 && String(r.stdout ?? '').trim() === 'true';
+}
+function gitIgnoredBatch(paths) {
+  if (!paths.length || !gitRepositoryAvailable()) return new Set();
+  const input = paths.map(normalizeRepoPath).join('\0') + '\0';
+  const r = spawnSync('git', ['check-ignore', '--stdin', '-z', '--no-index'], { cwd: root, input, maxBuffer: 64 * 1024 * 1024, shell: process.platform === 'win32' });
+  if (r.status !== 0 && r.status !== 1) return new Set();
+  return new Set(Buffer.from(r.stdout ?? []).toString('utf8').split('\0').filter(Boolean).map(normalizeRepoPath));
+}
+function gitIgnoredSingle(relPath) { const key=normalizeRepoPath(relPath); if(gitIgnoreSingleCache.has(key))return gitIgnoreSingleCache.get(key); const value=gitIgnoredBatch([key]).has(key); gitIgnoreSingleCache.set(key,value); return value; }
+function fallbackGitIgnoreDecision(relPath, isDirectory = false) {
+  const normalized = normalizeRepoPath(relPath);
+  const segments = normalized.split('/');
+  let decision = null;
+  for (let depth = 0; depth <= Math.max(0, segments.length - (isDirectory ? 0 : 1)); depth++) {
+    const base = segments.slice(0, depth).join('/');
+    const file = path.join(root, base, '.gitignore');
+    if (!fs.existsSync(file)) continue;
+    const relative = segments.slice(depth).join('/');
+    const matched = matchIgnoreRules(relative, isDirectory, loadIgnoreRules(file));
+    if (matched) decision = { ignored: matched.ignored, reason: `${base ? `${base}/` : ''}.gitignore:${matched.reason.replace(/^\.docgenignore:/,'')}` };
+  }
+  return decision;
+}
+function hardIgnoreDecision(relPath, isDirectory, config) {
+  const normalized = normalizeRepoPath(relPath);
+  const outputRoot = normalizeRepoPath(config.outputRoot || 'docs');
+  const hard = ['.git', '.commandcode', '.docgen', outputRoot, 'node_modules', 'target', 'build', 'dist', 'coverage', 'vendor'];
+  for (const prefix of hard) if (normalized === prefix || normalized.startsWith(`${prefix}/`)) return { ignored: true, reason: `docgen-hard-exclude:${prefix}/**` };
+  return configExcludeDecision(normalized, isDirectory, config);
+}
+function ignoreDecision(relPath, isDirectory = false, config = loadConfig()) {
+  const normalized = normalizeRepoPath(relPath);
+  if (!normalized) return { ignored: false, reason: null };
+  const hard = hardIgnoreDecision(normalized, isDirectory, config);
+  if (hard) return hard;
+  if (!isDirectory && sourceInventoryCache?.includedSet?.has(normalized)) return { ignored:false, reason:null };
+  if (config.ignore?.useGitignore !== false) {
+    const gitRepo = gitRepositoryAvailable();
+    if (gitRepo && gitIgnoredSingle(normalized)) return { ignored: true, reason: '.gitignore' };
+    const fallback = fallbackGitIgnoreDecision(normalized, isDirectory);
+    if (!gitRepo && fallback) return fallback;
+  }
+  if (config.ignore?.useDocgenignore !== false) {
+    const ignoreFile = path.join(root, config.ignore?.docgenignoreFile || '.docgenignore');
+    const matched = matchIgnoreRules(normalized, isDirectory, loadIgnoreRules(ignoreFile));
+    if (matched) return matched;
+  }
+  return { ignored: false, reason: null };
+}
+function candidateFilesFromGit() {
+  if (!commandExists('git') || !fs.existsSync(path.join(root, '.git'))) return null;
+  const r = spawnSync('git', ['ls-files', '-co', '--exclude-standard', '-z'], { cwd: root, maxBuffer: 128 * 1024 * 1024, shell: process.platform === 'win32' });
+  if (r.status !== 0) return null;
+  return Buffer.from(r.stdout ?? []).toString('utf8').split('\0').filter(Boolean).map(normalizeRepoPath);
+}
+function fallbackWalkCandidates(dir, out = []) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name); const r = rel(full); const hard = hardIgnoreDecision(r, entry.isDirectory(), loadConfig());
+    if (hard?.ignored) continue;
+    if (entry.isDirectory()) fallbackWalkCandidates(full, out); else out.push(normalizeRepoPath(r));
+  }
+  return out;
+}
+function buildSourceInventory(options = {}) {
+  const config = loadConfig();
+  let candidates = candidateFilesFromGit();
+  const usedGit = Boolean(candidates);
+  if (!candidates) candidates = fallbackWalkCandidates(root);
+  const gitRepo = gitRepositoryAvailable();
+  const gitIgnored = config.ignore?.useGitignore === false ? new Set() : gitIgnoredBatch(candidates);
+  const docgenRules = config.ignore?.useDocgenignore === false ? [] : loadIgnoreRules(path.join(root, config.ignore?.docgenignoreFile || '.docgenignore'));
+  const included = []; const ignoredSamples = []; const reasonCounts = {};
+  for (const item of [...new Set(candidates)].sort()) {
+    const full = path.join(root, item);
+    if (!fs.existsSync(full) || !fs.statSync(full).isFile()) continue;
+    let decision = hardIgnoreDecision(item, false, config);
+    if (!decision && gitIgnored.has(item)) decision = { ignored: true, reason: '.gitignore' };
+    if (!decision && !gitRepo && config.ignore?.useGitignore !== false) decision = fallbackGitIgnoreDecision(item, false);
+    if (!decision && docgenRules.length) decision = matchIgnoreRules(item, false, docgenRules);
+    if (decision?.ignored) {
+      reasonCounts[decision.reason] = (reasonCounts[decision.reason] ?? 0) + 1;
+      if (ignoredSamples.length < 500) ignoredSamples.push({ path: item, reason: decision.reason });
+    } else included.push(item);
+  }
+  const controlFiles = ['.gitignore', config.ignore?.docgenignoreFile || '.docgenignore'].filter((x) => fs.existsSync(path.join(root, x)));
+  const report = { schemaVersion: '1.0', generatedAt: now(), usedGit, gitAvailable: commandExists('git'), gitRepository: gitRepo, includedCount: included.length, ignoredSampleCount: ignoredSamples.length, reasonCounts, controlFiles, includedFiles: options.includeFiles === false ? undefined : included, ignoredSamples };
+  return report;
+}
+function writeSourceInventory() {
+  const inventory = buildSourceInventory();
+  sourceInventoryCache = { inventory, includedSet:new Set(inventory.includedFiles ?? []) }; gitIgnoreSingleCache.clear();
+  writeJson(sourceInventoryPath, inventory);
+  fs.mkdirSync(path.dirname(sourceFilesPath), { recursive: true });
+  fs.writeFileSync(sourceFilesPath, (inventory.includedFiles ?? []).join('\n') + '\n');
+  if (loadConfig().ignore?.writeReport !== false) writeJson(ignoreReportPath, { ...inventory, includedFiles: undefined });
+  return inventory;
 }
 function walkFiles(dir, config, out = []) {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name); const r = rel(full);
-    if (ignored(r, config)) continue;
-    if (entry.isDirectory()) walkFiles(full, config, out);
-    else out.push(full);
-  }
+  const inventory = buildSourceInventory();
+  for (const relPath of inventory.includedFiles ?? []) out.push(path.join(root, relPath));
   return out;
 }
 function hashFile(file) { return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); }
@@ -1630,7 +1983,45 @@ function makeSnapshot() {
     if (stat.size > 5 * 1024 * 1024) continue;
     entries[rel(file)] = { sha256: hashFile(file), size: stat.size };
   }
-  return { schemaVersion: '1.0', generatedAt: now(), files: entries };
+  const ignoreControls = { configIgnore: config.ignore ?? {}, exclude: config.exclude ?? [], gitignore: fs.existsSync(path.join(root,'.gitignore')) ? fileSha256(path.join(root,'.gitignore')) : null, docgenignore: fs.existsSync(path.join(root, config.ignore?.docgenignoreFile || '.docgenignore')) ? fileSha256(path.join(root, config.ignore?.docgenignoreFile || '.docgenignore')) : null };
+  return { schemaVersion: '1.0', generatedAt: now(), ignorePolicyHash: sha256Text(JSON.stringify(ignoreControls)), files: entries };
+}
+function doSourceList(pattern = '') {
+  const inventory = writeSourceInventory();
+  const needle = String(pattern ?? '').toLowerCase();
+  for (const file of (inventory.includedFiles ?? []).filter((x)=>!needle || x.toLowerCase().includes(needle))) console.log(file);
+}
+function doSourceGrep(args = []) {
+  const regexMode = args.includes('--regex');
+  const query = args.filter((x)=>x!=='--regex').join(' ');
+  if (!query) fail('source-grep requires a search string (or --regex <pattern>).', 2);
+  let matcher;
+  try { matcher = regexMode ? new RegExp(query, 'i') : { test:(x)=>x.toLowerCase().includes(query.toLowerCase()) }; }
+  catch(e) { fail(`Invalid regex: ${e.message}`,2); }
+  const inventory = writeSourceInventory(); let matches=0; const maxMatches=500;
+  for (const relPath of inventory.includedFiles ?? []) {
+    const file=path.join(root,relPath); let stat; try{stat=fs.statSync(file);}catch{continue;} if(stat.size>2*1024*1024)continue;
+    let text; try{text=fs.readFileSync(file,'utf8');}catch{continue;} if(text.includes('\0'))continue;
+    const lines=text.split(/\r?\n/);
+    for(let i=0;i<lines.length;i++) if(matcher.test(lines[i])) { console.log(`${relPath}:${i+1}:${lines[i].trimEnd()}`); matches++; if(matches>=maxMatches){console.log(`[docgen] source-grep stopped at ${maxMatches} matches.`);return;} }
+  }
+  if(!matches) console.log('[docgen] source-grep found no matches in included source files.');
+}
+function doIgnore(target) {
+  const inventory = writeSourceInventory();
+  if (target) {
+    const normalized = normalizeRepoPath(target);
+    const full = path.join(root, normalized);
+    const decision = ignoreDecision(normalized, fs.existsSync(full) && fs.statSync(full).isDirectory());
+    console.log(`${normalized}: ${decision.ignored ? 'IGNORED' : 'INCLUDED'}${decision.reason ? ` (${decision.reason})` : ''}`);
+    return;
+  }
+  console.log(`Included source files: ${inventory.includedCount}`);
+  console.log(`Git ignore engine: ${inventory.usedGit ? 'active' : inventory.gitAvailable ? 'fallback inventory' : 'git unavailable'}`);
+  console.log(`.docgenignore: ${fs.existsSync(path.join(root, loadConfig().ignore?.docgenignoreFile || '.docgenignore')) ? 'present' : 'not present'}`);
+  console.log(`Source list: ${rel(sourceFilesPath)}`);
+  console.log(`Ignore report: ${rel(ignoreReportPath)}`);
+  for (const [reason,count] of Object.entries(inventory.reasonCounts ?? {}).sort()) console.log(`- ${reason}: ${count}`);
 }
 function doSnapshot() {
   const snap = makeSnapshot(); writeJson(fingerprintsPath, snap); console.log(`Snapshot saved: ${Object.keys(snap.files).length} files.`);
@@ -1653,6 +2044,7 @@ async function doUpdate(explicitPaths) {
   for (const scope of scopes) await doDiscover(scope);
   await doAnalyze(`incremental changes: ${changed.join(', ')}`);
   await doSemantics();
+  if (loadConfig().enterpriseDepth?.enabled !== false) await doEnterprise();
   await doPlan();
   for (const id of plan.affectedPageIds ?? []) {
     const currentManifest = loadManifest();
@@ -1670,6 +2062,7 @@ function validateStageArtifact(stage) {
     normalizeJsonFile(flowsPath, normalizeFlowsObject, assertFlowsModel),
     normalizeJsonFile(catalogsPath, normalizeCatalogsObject, assertCatalogsModel)
   ];
+  if (stage === 'enterprise') return ENTERPRISE_PASSES.flatMap((p)=>p.outputs).map(normalizeEnterpriseFile);
   if (stage === 'plan') return requireManifestPreflight();
   return true;
 }
@@ -1686,6 +2079,17 @@ function contractSelfTest() {
   check('business aliases', () => assertCanonicalModel('business', normalizeBusinessObject({ roles: [], businessCapabilities: [], domainConcepts: [], rules: [{}], decisionPoints: [], conditions: [], stateMachines: [], constraints: [], scenarios: [], gaps: [] }), ['actors','capabilities','concepts','businessRules','decisions','branchConditions','lifecycles','invariants','useCases','unknowns']));
   check('flow aliases', () => assertCanonicalModel('flows', normalizeFlowsObject({ flows: [{ type: 'request' }, { type: 'data' }, { type: 'event' }] }), ['businessFlows','controlFlows','requestFlows','trafficFlows','dataFlows','eventFlows']));
   check('catalog aliases', () => assertCanonicalModel('catalogs', normalizeCatalogsObject({ routes: [{}], handlers: [{}], integrations: [{}], databases: [{}], cronJobs: [{}] }), ['endpoints','messageHandlers','externalDependencies','dataStores','scheduledJobs']));
+  check('enterprise aliases', () => {
+    assertEnterpriseModel('security', normalizeSecurityObject({boundaries:[{}],authnFlows:[],authzRules:[],gaps:[]}), 'security');
+    assertEnterpriseModel('operations', normalizeOperationsObject({health:[{}],failures:[],runbooks:[],gaps:[]}), 'operations');
+    assertEnterpriseModel('testing', normalizeTestingObject({suites:[{}],testCommands:[],gaps:[]}), 'testing');
+    assertEnterpriseModel('data-governance', normalizeDataGovernanceObject({entities:[{}],transactions:[],lineage:[],gaps:[]}), 'dataGovernance');
+    assertEnterpriseModel('decisions', normalizeDecisionsObject({adrs:[{}],options:[],gaps:[]}), 'decisions');
+    assertEnterpriseModel('configuration', normalizeConfigurationObject({properties:[{}],environmentMatrix:[],gaps:[]}), 'configuration');
+    assertEnterpriseModel('change-impact', normalizeChangeImpactObject({changePoints:[{}],blastRadius:[],gaps:[]}), 'changeImpact');
+    assertEnterpriseModel('ownership', normalizeOwnershipObject({owners:[{}],raci:[],gaps:[]}), 'ownership');
+  });
+  check('ignore pattern semantics', () => { const rules=[{raw:'private/**',pattern:'private/**',negated:false,directoryOnly:false,anchored:false,regex:ignorePatternRegex('private/**',false)},{raw:'!private/public.md',pattern:'private/public.md',negated:true,directoryOnly:false,anchored:false,regex:ignorePatternRegex('private/public.md',false)}]; if(!matchIgnoreRules('private/secret.md',false,rules)?.ignored) throw new Error('ignore rule not applied'); if(matchIgnoreRules('private/public.md',false,rules)?.ignored) throw new Error('negation not applied'); });
   check('update-plan aliases', () => assertCanonicalModel('update', normalizeUpdatePlanObject({ changedFiles:['a'], scopes:['.'], models:['system'], pages:['overview'], reasons:['x'] }), ['changedPaths','affectedEvidenceScopes','affectedModels','affectedPageIds','rationale']));
   check('page path variants', () => { for (const x of ['orientation/overview','/orientation/overview.md','docs/orientation/overview','docs/orientation/overview.md']) if (canonicalPagePath(x) !== 'docs/orientation/overview.md') throw new Error(x); });
   check('audit aliases', () => { const page = { id: 'overview', path: 'docs/orientation/overview.md' }; const x = normalizeAuditReportObject({ id: 'overview', path: 'orientation/overview', hash: 'abc', inputHash: 'def', issues: ['x'] }, page); if (x.pagePath !== page.path || x.findings.length !== 1) throw new Error('audit normalization'); });
@@ -1695,7 +2099,15 @@ function contractSelfTest() {
       [normalizeBusinessObject, { roles:[], rules:[{id:'r'}], policies:[{id:'p'}] }],
       [normalizeFlowsObject, { flows:[{id:'q',type:'request'}], httpFlows:[{id:'q',type:'request'}] }],
       [normalizeCatalogsObject, { consumers:[{id:'c'}], producers:[{id:'p'}], listeners:[{id:'l'}] }],
-      [normalizeUpdatePlanObject, { changedFiles:['a'], pages:['x'] }]
+      [normalizeUpdatePlanObject, { changedFiles:['a'], pages:['x'] }],
+      [normalizeSecurityObject, { boundaries:[{id:'b'}], authnFlows:[] }],
+      [normalizeOperationsObject, { health:[{id:'h'}], deploymentStrategies:[{id:'dep'}], failures:[] }],
+      [normalizeTestingObject, { suites:[{id:'s'}], testCommands:[] }],
+      [normalizeDataGovernanceObject, { entities:[{id:'d'}], transactions:[] }],
+      [normalizeDecisionsObject, { adrs:[{id:'a'}], options:[] }],
+      [normalizeConfigurationObject, { properties:[{id:'c'}], environmentMatrix:[] }],
+      [normalizeChangeImpactObject, { changePoints:[{id:'x'}], blastRadius:[] }],
+      [normalizeOwnershipObject, { owners:[{id:'o'}], raci:[] }]
     ];
     for (const [fn, input] of samples) { const once = fn(input); const twice = fn(once); if (JSON.stringify(once) !== JSON.stringify(twice)) throw new Error(`${fn.name} is not idempotent`); }
   });
@@ -1706,13 +2118,13 @@ function contractSelfTest() {
   check('duplicate semantic IDs rejected', () => { let failed=false; try{assertBusinessModel(normalizeBusinessObject({rules:[{id:'same',statement:'a'},{id:'same',statement:'b'}]}));}catch{failed=true;} if(!failed) throw new Error('duplicate IDs accepted'); });
   check('FACT requires direct evidence', () => { let failed=false; try{assertBusinessModel(normalizeBusinessObject({rules:[{id:'r',statement:'unsupported',classification:'FACT'}]}));}catch{failed=true;} if(!failed) throw new Error('unsupported FACT was accepted'); });
   check('traceability aliases', () => { const page={id:'overview',path:'docs/orientation/overview.md',evidence:[],models:[]}; const x=normalizeTraceabilityObject({facts:[{claim:'Service uses PostgreSQL',status:'fact',sources:['pom.xml'],subject:'service',predicate:'database',object:'postgresql'}]},page); if(x.claims.length!==1||x.claims[0].kind!=='claim'||x.claims[0].classification!=='FACT') throw new Error('traceability normalization'); });
-  check('contradiction detection keys', () => { const a={subject:'quote',predicate:'mutable',object:'yes',polarity:'positive',statement:'a'}, b={subject:'quote',predicate:'mutable',object:'no',polarity:'positive',statement:'b'}; if(claimSemanticKey(a)!==claimSemanticKey(b)||claimValueKey(a)===claimValueKey(b)) throw new Error('contradiction keys'); });
+  check('contradiction detection keys', () => { const a={subject:'quote',predicate:'mutable',object:'yes',polarity:'positive',statement:'a',exclusivePredicate:true}, b={subject:'quote',predicate:'mutable',object:'no',polarity:'positive',statement:'b',exclusivePredicate:true}; if(claimSemanticKey(a)!==claimSemanticKey(b)||claimValueKey(a)===claimValueKey(b)) throw new Error('contradiction keys'); });
   check('word count advisory only', () => { const q=qualityConfig(); if(q.wordCountGate==='hard') throw new Error('word count must not be primary hard gate'); });
   const failures = results.filter((x) => x.status === 'failed');
   const report = {
     schemaVersion: '1.0', kitVersion, checkedAt: now(), passed: failures.length === 0,
     invariants: ['canonicalization', 'idempotence', 'losslessness', 'path-safety', 'identity-consistency', 'transactional-restore', 'typed-items', 'claim-traceability', 'semantic-quality', 'freshness'],
-    boundaries: ['discover/evidence-index', 'analyze/system-model', 'semantics/business-model', 'semantics/flow-model', 'semantics/catalog-model', 'plan/manifest', 'generate/markdown-path', 'audit/report', 'update/impact-plan', 'generate/traceability-sidecar', 'quality/cross-page-consistency'],
+    boundaries: ['discover/evidence-index', 'analyze/system-model', 'semantics/business-model', 'semantics/flow-model', 'semantics/catalog-model', 'plan/manifest', 'generate/markdown-path', 'audit/report', 'update/impact-plan', 'generate/traceability-sidecar', 'quality/cross-page-consistency', 'enterprise/security', 'enterprise/operations', 'enterprise/testing', 'enterprise/data-governance', 'enterprise/decisions', 'enterprise/configuration', 'enterprise/change-impact', 'enterprise/ownership', 'source-ignore/gitignore-docgenignore'],
     tests: results
   };
   writeJson(path.join(root, '.docgen', 'state', 'contract-report.json'), report);
@@ -1724,7 +2136,7 @@ function contractSelfTest() {
 function status() {
   const state = loadState();
   console.log(`DocGen Kit ${kitVersion}`);
-  for (const stage of ['discover', 'analyze', 'semantics', 'plan', 'generate', 'audit']) console.log(`${stage.padEnd(10)} ${state.stages?.[stage]?.status ?? 'pending'}`);
+  for (const stage of ['discover', 'analyze', 'semantics', 'enterprise', 'plan', 'generate', 'audit']) console.log(`${stage.padEnd(10)} ${state.stages?.[stage]?.status ?? 'pending'}`);
   if (fs.existsSync(manifestPath)) {
     const m = normalizeManifest(); const generated = (m.pages ?? []).filter(pageIsValid).length; const reusable = (m.pages ?? []).filter(pageIsReusable).length;
     console.log(`pages      ${generated}/${m.pages?.length ?? 0} generated | ${reusable} reusable for current inputs`);
@@ -1803,7 +2215,7 @@ function compatibilityReport() {
   if (!authenticated) report.warnings.push('Command Code is not authenticated or status could not confirm authentication. Run `cmd login` before generation.');
 
   report.effectiveHeadlessArgs = Object.fromEntries(
-    ['discover', 'analyze', 'semantics', 'plan', 'generate', 'enrich', 'audit', 'fix', 'update-impact'].map((stage) => [stage, commandCodeArgs(stage)])
+    ['discover', 'analyze', 'semantics', 'enterprise', 'plan', 'generate', 'enrich', 'audit', 'fix', 'update-impact'].map((stage) => [stage, commandCodeArgs(stage)])
   );
   writeJson(path.join(root, '.docgen', 'state', 'compatibility.json'), report);
   return report;
@@ -1846,6 +2258,9 @@ function initProject(targetArg = '.', force = false) {
   const projectTemplate = path.join(engineHome, 'project-template');
   if (!fs.existsSync(projectTemplate)) fail(`Global project template missing: ${projectTemplate}`);
   copyTreeMissing(projectTemplate, path.join(target, '.docgen'), force);
+  const rootTemplate = path.join(engineHome, 'project-root-template');
+  // Root-level files such as .docgenignore are user-owned policy and are never overwritten, even by init --force.
+  if (fs.existsSync(rootTemplate)) copyTreeMissing(rootTemplate, target, false);
   fs.mkdirSync(path.join(target, 'docs'), { recursive: true });
   const marker = {
     schemaVersion: '1.0',
@@ -1872,7 +2287,7 @@ function initProject(targetArg = '.', force = false) {
 function globalDoctor() {
   const errors = [];
   for (const dir of ['agents', 'skills', 'commands']) if (!fs.existsSync(path.join(commandCodeHome, dir))) errors.push(`Missing ${path.join(commandCodeHome, dir)}`);
-  for (const dir of ['hooks', 'prompts', 'schemas', 'project-template', 'bin']) if (!fs.existsSync(path.join(engineHome, dir))) errors.push(`Missing ${path.join(engineHome, dir)}`);
+  for (const dir of ['hooks', 'prompts', 'schemas', 'project-template', 'project-root-template', 'bin']) if (!fs.existsSync(path.join(engineHome, dir))) errors.push(`Missing ${path.join(engineHome, dir)}`);
   const bin = commandCodeBin();
   console.log(`DocGen Kit: ${kitVersion}`);
   console.log(`Engine home: ${engineHome}`);
@@ -1905,6 +2320,10 @@ Project commands:
   docgen discover [scope]
   docgen analyze [scope]
   docgen semantics              extract business/flow/catalog models
+  docgen enterprise             extract P1 security/operations/testing/data/decision/config/impact/ownership models
+  docgen ignore [path]          inspect effective .gitignore + .docgenignore source boundary
+  docgen source-list [filter]   list only included repository source files
+  docgen source-grep [--regex] <query> search only included repository source files
   docgen plan
   docgen preflight             normalize/validate the entire manifest before any page LLM call
   docgen generate <id|--all>    generate pages; comprehensive profile auto-enriches
@@ -1950,6 +2369,10 @@ switch (command) {
   case 'discover': await doDiscover(args.join(' ') || '.'); break;
   case 'analyze': await doAnalyze(args.join(' ') || 'all current evidence'); break;
   case 'semantics': await doSemantics(); break;
+  case 'enterprise': await doEnterprise(); break;
+  case 'ignore': doIgnore(args[0]); break;
+  case 'source-list': doSourceList(args.join(' ')); break;
+  case 'source-grep': doSourceGrep(args); break;
   case 'plan': await doPlan(); break;
   case 'preflight': { const m = requireManifestPreflight(); console.log(`Manifest preflight PASS: ${m.pages.length} pages. Report: ${rel(preflightPath)}`); break; }
   case 'generate': if (args[0] === '--all') await doGenerateAll(args.includes('--force')); else if (args[0]) await doGenerate(args[0], '', true, args.includes('--force')); else fail('generate requires <page-id|--all>'); break;
@@ -1968,19 +2391,23 @@ switch (command) {
     const state = loadState();
     const stageComplete = (name, artifact) => !fresh && state.stages?.[name]?.status === 'completed' && (!artifact || fs.existsSync(artifact)) && stageCheckpointValid(name);
     let upstreamReran = false;
-    if (!upstreamReran && stageComplete('discover', evidenceIndexPath)) console.log('[docgen] SKIP phase 1/7 discovery — completed evidence checkpoint exists.');
-    else { printItemProgress('phase', 1, 7, 'evidence discovery'); await doDiscover('.', 'phase 1/7'); upstreamReran = true; }
-    if (!upstreamReran && stageComplete('analyze', systemPath)) console.log('[docgen] SKIP phase 2/7 analysis — completed system model exists.');
-    else { printItemProgress('phase', 2, 7, 'technical architecture analysis'); await doAnalyze('all current evidence', 'phase 2/7'); upstreamReran = true; }
-    if (!upstreamReran && stageComplete('semantics', catalogsPath) && fs.existsSync(businessPath) && fs.existsSync(flowsPath)) console.log('[docgen] SKIP phase 3/7 semantics — completed semantic models exist.');
-    else { printItemProgress('phase', 3, 7, 'business, flow, and catalog semantics'); await doSemantics('phase 3/7'); upstreamReran = true; }
-    if (!upstreamReran && stageComplete('plan', manifestPath)) { const m = requireManifestPreflight(); console.log(`[docgen] SKIP phase 4/7 planning — valid preflighted manifest exists (${m.pages.length} pages).`); }
-    else { printItemProgress('phase', 4, 7, 'multi-page documentation planning'); await doPlan('phase 4/7'); upstreamReran = true; }
+    if (!upstreamReran && stageComplete('discover', evidenceIndexPath)) console.log('[docgen] SKIP phase 1/8 discovery — completed evidence checkpoint exists.');
+    else { printItemProgress('phase', 1, 8, 'evidence discovery'); await doDiscover('.', 'phase 1/8'); upstreamReran = true; }
+    if (!upstreamReran && stageComplete('analyze', systemPath)) console.log('[docgen] SKIP phase 2/8 analysis — completed system model exists.');
+    else { printItemProgress('phase', 2, 8, 'technical architecture analysis'); await doAnalyze('all current evidence', 'phase 2/8'); upstreamReran = true; }
+    if (!upstreamReran && stageComplete('semantics', catalogsPath) && fs.existsSync(businessPath) && fs.existsSync(flowsPath)) console.log('[docgen] SKIP phase 3/8 semantics — completed semantic models exist.');
+    else { printItemProgress('phase', 3, 8, 'business, flow, and catalog semantics'); await doSemantics('phase 3/8'); upstreamReran = true; }
+    const enterpriseFiles = ENTERPRISE_PASSES.flatMap((p)=>p.outputs);
+    if (loadConfig().enterpriseDepth?.enabled === false) console.log('[docgen] SKIP phase 4/8 enterprise depth — disabled by configuration.');
+    else if (!upstreamReran && stageComplete('enterprise', securityPath) && enterpriseFiles.every((f)=>fs.existsSync(f))) console.log('[docgen] SKIP phase 4/8 enterprise depth — completed P1 models exist.');
+    else { printItemProgress('phase', 4, 8, 'P1 enterprise depth'); await doEnterprise('phase 4/8'); upstreamReran = true; }
+    if (!upstreamReran && stageComplete('plan', manifestPath)) { const m = requireManifestPreflight(); console.log(`[docgen] SKIP phase 5/8 planning — valid preflighted manifest exists (${m.pages.length} pages).`); }
+    else { printItemProgress('phase', 5, 8, 'multi-page documentation planning'); await doPlan('phase 5/8'); upstreamReran = true; }
     const manifest = requireManifestPreflight(); console.log(`Plan contains ${manifest.pages.length} pages across ${manifest.navigation?.length ?? 0} navigation categories.`);
-    printItemProgress('phase', 5, 7, 'batched page generation + targeted enrichment'); await doGenerateAll(fresh);
-    printItemProgress('phase', 6, 7, 'batched independent audit'); await doAuditAll();
+    printItemProgress('phase', 6, 8, 'batched page generation + targeted enrichment'); await doGenerateAll(fresh);
+    printItemProgress('phase', 7, 8, 'batched independent audit'); await doAuditAll();
     if (isComprehensive() && qualityConfig().autoFix !== false) {
-      console.log('Phase 6b/7 — automatic repair only for pages with audit findings');
+      console.log('Phase 7b/8 — automatic repair only for pages with audit findings');
       const fixed = await doFixAll();
       if (fixed.length && qualityConfig().reAuditAfterFix !== false) {
         console.log(`Re-auditing ${fixed.length} repaired page(s)...`);
@@ -1988,7 +2415,7 @@ switch (command) {
         rebuildAuditIndex();
       }
     }
-    printItemProgress('phase', 7, 7, 'quality summary + source snapshot');
+    printItemProgress('phase', 8, 8, 'quality summary + source snapshot');
     writeQualitySummary(); doSnapshot(); doQuality();
     break;
   }

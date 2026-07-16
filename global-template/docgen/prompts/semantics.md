@@ -1,5 +1,7 @@
 You are running the DocGen business-and-system semantics stage.
 
+Respect `.docgen/state/source-files.txt`; ignored repository files must not be read or cited. Existing `.docgen/evidence/**` and `.docgen/model/**` are allowed.
+
 Delegate to the `doc-domain-analyst` custom agent. Read `.docgen/evidence/**` and `.docgen/model/system.json` as primary inputs; inspect source only for targeted verification.
 
 Produce exactly these normalized model files:

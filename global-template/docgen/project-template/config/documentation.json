@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.4",
+  "schemaVersion": "1.5",
   "projectName": "",
   "outputRoot": "docs",
   "discoveryScopes": [
@@ -70,7 +70,13 @@
     "data",
     "integration",
     "operations",
-    "troubleshooting"
+    "troubleshooting",
+    "security",
+    "testing",
+    "configuration",
+    "decision",
+    "ownership",
+    "maintenance"
   ],
   "requireEvidenceReferences": true,
   "diagramFormat": "mermaid",
@@ -92,7 +98,8 @@
       "fix": 20,
       "update-impact": 20,
       "enrich": 20,
-      "semantics": 30
+      "semantics": 30,
+      "enterprise": 30
     }
   },
   "quality": {
@@ -128,7 +135,18 @@
       "data-flow",
       "endpoint-catalog",
       "message-handler-catalog",
-      "external-dependency-catalog"
+      "external-dependency-catalog",
+      "security-trust-boundaries",
+      "authorization-model",
+      "data-governance",
+      "consistency-transactions",
+      "operations-observability",
+      "failure-recovery",
+      "testing-strategy",
+      "configuration-matrix",
+      "architecture-decisions",
+      "change-impact",
+      "ownership-responsibilities"
     ],
     "enrichmentMode": "on-failure",
     "wordCountGate": "advisory",
@@ -186,7 +204,8 @@
       "enrich": 15,
       "audit": 15,
       "fix": 15,
-      "update-impact": 15
+      "update-impact": 15,
+      "enterprise": 30
     },
     "adoptLegacyValidPages": true
   },
@@ -205,5 +224,44 @@
     "jitterRatio": 0.2,
     "countdownSeconds": 10,
     "interRequestDelaySeconds": 3
+  },
+  "enterpriseDepth": {
+    "enabled": true,
+    "passes": [
+      "governance",
+      "operability",
+      "data-and-configuration",
+      "evolution"
+    ],
+    "models": [
+      ".docgen/model/security.json",
+      ".docgen/model/operations.json",
+      ".docgen/model/testing.json",
+      ".docgen/model/data-governance.json",
+      ".docgen/model/decisions.json",
+      ".docgen/model/configuration.json",
+      ".docgen/model/change-impact.json",
+      ".docgen/model/ownership.json"
+    ],
+    "requiredCoverageTagsWhenEvidenceExists": [
+      "security-trust-boundaries",
+      "authorization-model",
+      "data-governance",
+      "consistency-transactions",
+      "operations-observability",
+      "failure-recovery",
+      "testing-strategy",
+      "configuration-matrix",
+      "architecture-decisions",
+      "change-impact",
+      "ownership-responsibilities"
+    ]
+  },
+  "ignore": {
+    "useGitignore": true,
+    "useDocgenignore": true,
+    "docgenignoreFile": ".docgenignore",
+    "writeReport": true,
+    "rejectIgnoredEvidence": true
   }
 }

@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docgen:change-impact:1.0",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "changeSurfaces",
+    "impactEdges",
+    "compatibilityBoundaries",
+    "extensionPoints",
+    "migrationRisks",
+    "affectedTests",
+    "affectedOperations",
+    "affectedContracts",
+    "unknowns"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "generatedAt": {
+      "type": "string"
+    },
+    "changeSurfaces": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "impactEdges": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "compatibilityBoundaries": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "extensionPoints": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "migrationRisks": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "affectedTests": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "affectedOperations": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "affectedContracts": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    }
+  }
+}

@@ -1,3 +1,5 @@
+Mandatory source boundary: never read or cite repository source absent from `.docgen/state/source-files.txt`. Existing `.docgen/**` and `docs/**` artifacts are allowed.
+
 You are running a bounded DocGen page generation stage.
 
 Page manifest entry:
@@ -33,3 +35,7 @@ Claim-level traceability contract:
 - Populate `coverage.evidenceRefsUsed` with declared evidence/model inputs actually used, and populate model/catalog/branch item refs with their stable IDs.
 - Omit pageHash/inputHash if unknown; the orchestrator fills them after the page is written.
 - Unknown or disputed behavior belongs in `unknowns[]`, not as a confident claim.
+
+Traceability contradiction precision:
+- Set `exclusivePredicate: true` only when the subject/predicate is single-valued and different objects would be mutually exclusive.
+- Leave it false for multi-valued relations such as “has component”, “uses service”, or “emits event”.

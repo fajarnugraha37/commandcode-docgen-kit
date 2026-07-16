@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docgen:ownership:1.0",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "teams",
+    "responsibilities",
+    "raciAssignments",
+    "componentOwners",
+    "dataOwners",
+    "operationalOwners",
+    "approvalAuthorities",
+    "escalationPaths",
+    "unknowns"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "generatedAt": {
+      "type": "string"
+    },
+    "teams": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "responsibilities": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "raciAssignments": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "componentOwners": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "dataOwners": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "operationalOwners": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "approvalAuthorities": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "escalationPaths": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    }
+  }
+}

@@ -7,6 +7,7 @@ Delegate to the `doc-planner` custom agent. Read:
 - `.docgen/model/business.json` when present;
 - `.docgen/model/flows.json` when present;
 - `.docgen/model/catalogs.json` when present;
+- `.docgen/model/security.json`, `operations.json`, `testing.json`, `data-governance.json`, `decisions.json`, `configuration.json`, `change-impact.json`, and `ownership.json` when present;
 - documentation config, style guide and glossary;
 - the existing manifest when present.
 
@@ -30,6 +31,13 @@ Build a navigation taxonomy with categories and pages appropriate to the reposit
 - complete Kafka/RabbitMQ/queue/stream handler catalog;
 - external services, cloud services, internal service dependencies and integrations;
 - module/component deep dives;
+- security overview, trust boundaries, authentication, authorization/permissions, secrets, sensitive-data protection, threats and controls;
+- data governance: ownership, source of truth, classification, retention, transactions, consistency, concurrency, idempotency, reconciliation, lineage, migrations and auditability;
+- operations: health/readiness, logs/metrics/traces, SLI/SLO when evidenced, alerts, capacity, scaling, failure modes, recovery, backup/restore, deployment/rollback and runbooks;
+- testing strategy, suites, fixtures/data, environments, commands, contract tests, failure injection, gates and coverage gaps;
+- configuration overview, environment matrix, flags, secrets, validation, reload/restart behavior, tuning and deprecation;
+- architecture decisions, alternatives, trade-offs, constraints, consequences and supersession;
+- ownership/RACI/approval/escalation and change-impact/blast-radius/compatibility/extension-point documentation;
 - persistence, configuration, security and observability;
 - local development and common engineering tasks;
 - deployment/runtime architecture;
@@ -39,7 +47,7 @@ Build a navigation taxonomy with categories and pages appropriate to the reposit
 Every page must define category, purpose, summary, audience, evidence/models, required sections, Mermaid diagram intents, coverageTags, related pages, and optional required tables/quality hints.
 
 Required coverage tags are conditional on evidence. Examples:
-`system-overview`, `architecture`, `business-domain`, `business-rules`, `branch-conditions`, `state-lifecycle`, `business-flow`, `control-flow`, `request-flow`, `traffic-flow`, `data-model`, `data-flow`, `event-flow`, `endpoint-catalog`, `message-handler-catalog`, `external-dependency-catalog`, `persistence`, `security`, `configuration`, `operations`, `troubleshooting`.
+`system-overview`, `architecture`, `security-trust-boundaries`, `authorization-model`, `data-governance`, `consistency-transactions`, `operations-observability`, `failure-recovery`, `testing-strategy`, `configuration-matrix`, `architecture-decisions`, `change-impact`, `ownership-responsibilities`, `business-domain`, `business-rules`, `branch-conditions`, `state-lifecycle`, `business-flow`, `control-flow`, `request-flow`, `traffic-flow`, `data-model`, `data-flow`, `event-flow`, `endpoint-catalog`, `message-handler-catalog`, `external-dependency-catalog`, `persistence`, `security`, `configuration`, `operations`, `troubleshooting`.
 
 {{MISSING_COVERAGE}}
 

@@ -23,6 +23,16 @@
         ]
       },
       {
+        "matcher": "read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .commandcode/hooks/docgen-guard-read-paths.mjs",
+            "timeout": 5
+          }
+        ]
+      },
+      {
         "matcher": "shell",
         "hooks": [
           {

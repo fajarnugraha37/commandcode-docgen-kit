@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docgen:decisions:1.0",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "recordedDecisions",
+    "inferredDecisions",
+    "alternatives",
+    "tradeoffs",
+    "constraints",
+    "consequences",
+    "supersededDecisions",
+    "unknowns"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "generatedAt": {
+      "type": "string"
+    },
+    "recordedDecisions": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "inferredDecisions": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "alternatives": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "tradeoffs": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "consequences": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "supersededDecisions": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    }
+  }
+}

@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docgen:operations:1.0",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "runtimeComponents",
+    "healthChecks",
+    "observabilitySignals",
+    "slis",
+    "slos",
+    "alerts",
+    "capacityLimits",
+    "scalingSignals",
+    "failureModes",
+    "recoveryProcedures",
+    "backups",
+    "deployments",
+    "runbooks",
+    "unknowns"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "generatedAt": {
+      "type": "string"
+    },
+    "runtimeComponents": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "healthChecks": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "observabilitySignals": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "slis": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "slos": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "alerts": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "capacityLimits": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "scalingSignals": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "failureModes": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "recoveryProcedures": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "backups": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "deployments": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "runbooks": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    }
+  }
+}

@@ -12,3 +12,7 @@ Read project documentation config/style/glossary plus all normalized model surfa
 The plan must make exhaustive catalogs discoverable and give important concepts/flows their own deep-dive pages. Preserve stable page ids and paths when reconciling unless evidence supports restructuring.
 
 Produce `.docgen/plan/manifest.json` conforming to its schema. Do not write published pages and never modify application source.
+## Ignore boundary
+
+Before reading repository source, read `.docgen/state/source-files.txt`. Do not read, search, cite, or derive facts from repository paths absent from that inventory. Existing `.docgen/**` and `docs/**` workflow artifacts remain available.
+

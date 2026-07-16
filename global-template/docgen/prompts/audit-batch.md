@@ -1,3 +1,5 @@
+Mandatory source boundary: never read or cite repository source absent from `.docgen/state/source-files.txt`. Existing `.docgen/**` and `docs/**` artifacts are allowed.
+
 You are running a bounded DocGen batched independent audit stage.
 
 Pages to audit, including their current content hashes:

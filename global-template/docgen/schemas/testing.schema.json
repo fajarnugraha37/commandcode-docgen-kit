@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docgen:testing:1.0",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "testSuites",
+    "testTypes",
+    "fixtures",
+    "testData",
+    "environments",
+    "commands",
+    "coverageGaps",
+    "contractTests",
+    "failureInjection",
+    "qualityGates",
+    "unknowns"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "generatedAt": {
+      "type": "string"
+    },
+    "testSuites": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "testTypes": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "fixtures": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "testData": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "environments": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "coverageGaps": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "contractTests": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "failureInjection": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "qualityGates": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "$ref": "semantic-item.schema.json#/$defs/semanticItem"
+      }
+    }
+  }
+}

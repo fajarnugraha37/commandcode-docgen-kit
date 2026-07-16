@@ -51,3 +51,12 @@ Write for engineers who do not yet know the codebase. Prefer purpose, mental mod
 
 Use standard Markdown and Mermaid. Keep claims precise and traceable to evidence. Mark genuine uncertainty instead of smoothing it over.
 <!-- COMMANDCODE-DOCGEN:END -->
+
+
+## Source Inventory and Ignore Boundary
+
+During DocGen workflows, repository source access must follow `.docgen/state/source-files.txt`. Do not read, search, cite, fingerprint, or use as FACT evidence any file excluded by `.gitignore`, `.docgenignore`, DocGen hard exclusions, or project `config.exclude`. Use explicit included paths or `docgen source-grep` instead of broad wildcard reads.
+
+## P1 Enterprise Depth
+
+When supported by evidence, build typed models for security, operations, testing, data governance, decisions, configuration, change impact, and ownership. Keep policy, business semantics, implementation behavior, operational guarantees, and inferred rationale epistemically distinct. Do not invent SLOs, permissions, owners, retention periods, recovery guarantees, or architectural rationale.

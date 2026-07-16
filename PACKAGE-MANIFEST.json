@@ -1,6 +1,6 @@
 {
   "name": "commandcode-docgen-kit",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "defaultInstallationScope": "global",
   "globalComponents": [
     "agents",
@@ -21,19 +21,21 @@
     ".docgen/state",
     ".docgen/runs",
     ".docgen/traceability",
-    "docs"
+    "docs",
+    ".docgen/quarantine",
+    ".docgenignore"
   ],
   "counts": {
-    "agents": 6,
-    "skills": 30,
-    "commands": 17,
-    "schemas": 15,
-    "prompts": 12
+    "agents": 7,
+    "skills": 38,
+    "commands": 19,
+    "schemas": 23,
+    "prompts": 13
   },
   "contractFirewall": {
-    "boundaries": 11,
-    "deterministicTests": 17,
-    "transactionalStages": 5,
+    "boundaries": 19,
+    "deterministicTests": 19,
+    "transactionalStages": 6,
     "zeroTokenCommand": "docgen contract-test"
   },
   "p0Trustworthiness": {
@@ -45,5 +47,23 @@
     "sourceFreshness": true,
     "wordCountGate": "advisory",
     "zeroTokenCommand": "docgen traceability"
+  },
+  "p1EnterpriseDepth": {
+    "security": true,
+    "operations": true,
+    "testing": true,
+    "dataGovernance": true,
+    "architectureDecisions": true,
+    "configuration": true,
+    "changeImpact": true,
+    "ownership": true
+  },
+  "ignoreBoundary": {
+    "gitignore": true,
+    "docgenignore": true,
+    "readHook": true,
+    "sourceInventory": true,
+    "fingerprintsRespectIgnore": true,
+    "traceabilityRejectsIgnoredEvidence": true
   }
 }

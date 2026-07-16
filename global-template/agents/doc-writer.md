@@ -16,3 +16,7 @@ Modify exactly one target page under `docs/**`. Never modify application source.
 ## P0 Trustworthiness
 
 Apply `doc-traceability` and `doc-semantic-quality`. Produce typed semantic objects, claim-level evidence mappings, and explicit UNKNOWNs. Never promote unsupported prose to FACT.
+## Ignore boundary
+
+Before reading repository source, read `.docgen/state/source-files.txt`. Do not read, search, cite, or derive facts from repository paths absent from that inventory. Existing `.docgen/**` and `docs/**` workflow artifacts remain available.
+

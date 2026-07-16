@@ -42,6 +42,7 @@ function mergeGlobalSettings(backupRoot,installed){
     SessionStart:[{hooks:[{type:'command',command:hookCommand('docgen-session-context.mjs'),timeout:5}]}],
     PreToolUse:[
       {matcher:'write|edit',hooks:[{type:'command',command:hookCommand('docgen-guard-write-paths.mjs'),timeout:5}]},
+      {matcher:'read',hooks:[{type:'command',command:hookCommand('docgen-guard-read-paths.mjs'),timeout:5}]},
       {matcher:'shell',hooks:[{type:'command',command:hookCommand('docgen-guard-shell.mjs'),timeout:5}]}
     ],
     PostToolUse:[{matcher:'write|edit',hooks:[{type:'command',command:hookCommand('docgen-validate-written-artifact.mjs'),timeout:10}]}]
@@ -76,7 +77,7 @@ function installGlobal(){
 function installProjectLocal(target){
   const template=path.join(here,'project-local-template'); const abs=path.resolve(target); if(!fs.existsSync(abs)||!fs.statSync(abs).isDirectory()){console.error(`Target is not a directory: ${abs}`);process.exit(2)}
   const backupRoot=path.join(abs,'.docgen','install-backup',timestamp); const installed=[]; const skipped=[];
-  function localCopy(src,dest){const data=fs.readFileSync(src);const rel=path.relative(abs,dest).replaceAll('\\','/');if(fs.existsSync(dest)){if(sha256(fs.readFileSync(dest))===sha256(data)){installed.push({path:rel,action:'unchanged'});return}if(!force){skipped.push({path:rel,reason:'conflict; use --force'});return}if(!dryRun){const b=path.join(backupRoot,rel);fs.mkdirSync(path.dirname(b),{recursive:true});fs.copyFileSync(dest,b)}}console.log(`${dryRun?'[dry-run] ':''}copy ${rel}`);if(!dryRun){fs.mkdirSync(path.dirname(dest),{recursive:true});fs.writeFileSync(dest,data)}installed.push({path:rel,action:'copied'})}
+  function localCopy(src,dest){const data=fs.readFileSync(src);const rel=path.relative(abs,dest).replaceAll('\\','/');if(fs.existsSync(dest)){if(sha256(fs.readFileSync(dest))===sha256(data)){installed.push({path:rel,action:'unchanged'});return}if(rel==='.docgenignore'){skipped.push({path:rel,reason:'preserved user-owned ignore policy'});return}if(!force){skipped.push({path:rel,reason:'conflict; use --force'});return}if(!dryRun){const b=path.join(backupRoot,rel);fs.mkdirSync(path.dirname(b),{recursive:true});fs.copyFileSync(dest,b)}}console.log(`${dryRun?'[dry-run] ':''}copy ${rel}`);if(!dryRun){fs.mkdirSync(path.dirname(dest),{recursive:true});fs.writeFileSync(dest,data)}installed.push({path:rel,action:'copied'})}
   for(const src of walk(template)){const rel=path.relative(template,src);if(rel==='AGENTS.md'||rel==='.commandcode/settings.json')continue;localCopy(src,path.join(abs,rel))}
   // Install the same current engine used by global mode under the project's .commandcode scope.
   const localEngineTemplate=path.join(here,'global-template','docgen');
@@ -98,6 +99,6 @@ function installProjectLocal(target){
     current.hooks ??= {}; for(const [event,defs] of Object.entries(source.hooks??{})){current.hooks[event]??=[];const sig=new Set(current.hooks[event].flatMap(d=>(d.hooks??[]).map(h=>`${d.matcher??''}|${h.command??''}`)));for(const d of defs){const fresh=(d.hooks??[]).filter(h=>!sig.has(`${d.matcher??''}|${h.command??''}`));if(fresh.length)current.hooks[event].push({...d,hooks:fresh})}}
     console.log(`${dryRun?'[dry-run] ':''}merge ${settingsDest}`); if(!dryRun){fs.mkdirSync(path.dirname(settingsDest),{recursive:true});fs.writeFileSync(settingsDest,JSON.stringify(current,null,2)+'\n')}
   }
-  console.log(`\nInstalled self-contained project-local DocGen ${version} into ${abs}`); if(skipped.length) console.log(`Skipped ${skipped.length} conflicts; use --force to overwrite DocGen-owned files.`);
+  console.log(`\nInstalled self-contained project-local DocGen ${version} into ${abs}`); if(skipped.length){console.log('\nSkipped or preserved files:');for(const x of skipped)console.log(`- ${x.path}: ${x.reason}`)}
 }
 if(localIndex>=0){const target=argv[localIndex+1];if(!target){console.error('Usage: node install.mjs --project-local <repository> [--force]');process.exit(2)}installProjectLocal(target)}else installGlobal();

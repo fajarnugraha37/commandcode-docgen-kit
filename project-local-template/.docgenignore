@@ -1,0 +1,10 @@
+# DocGen-specific ignore rules.
+# Syntax follows common .gitignore conventions: blank lines/comments are ignored,
+# leading ! negates a prior rule, trailing / targets directories, and ** is recursive.
+# .gitignore rules are also followed automatically.
+
+# Examples:
+# generated-samples/
+# private-notes/**
+# **/*.snapshot.json
+# !private-notes/public-architecture.md
