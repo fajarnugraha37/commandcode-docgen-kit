@@ -9,6 +9,7 @@ const STAGE_QUERIES = {
   plan: 'architecture business rule lifecycle flow endpoint message security operation testing configuration ownership decision change impact',
   audit: 'fact evidence rule branch failure security transaction contract'
 };
+const CORE_MODELS = ['system', 'business', 'flows', 'catalogs'];
 
 function ftsQuery(value) {
   const tokens = String(value ?? '').toLowerCase().match(/[a-z0-9_.$/@:-]{2,}/g) ?? [];
@@ -49,15 +50,16 @@ function fitBudget(base, facts, models, maxTokens) {
   return { selectedFacts, selectedModels, estimatedTokens: used };
 }
 
-export function compileContext(root, { stage, target = '', query = '', maxTokens, factLimit = 800, modelLimit = 500, allowedModels = null, metadata = {} }) {
+export function compileContext(root, { stage, target = '', query = '', maxTokens, factLimit = 800, modelLimit = 500, allowedModels = undefined, metadata = {} }) {
   const paths = projectPaths(root); const config = loadConfig(root); const configured = config.context?.maxTokens?.[stage] ?? config.context?.maxTokens?.default ?? 60000;
+  const modelScope = allowedModels !== undefined ? allowedModels : stage === 'modelCore' ? false : stage === 'modelEnterprise' ? CORE_MODELS : null;
   const budget = Math.max(256, Number(maxTokens ?? configured)); const db = openDatabase(paths.database);
   const effectiveQuery = [STAGE_QUERIES[stage] ?? '', query, target].filter(Boolean).join(' ');
-  const facts = rowsForFacts(db, effectiveQuery, factLimit).map(compactFact); const models = rowsForModels(db, effectiveQuery, modelLimit, allowedModels).map(compactModel);
-  const base = { schemaVersion: '2.0', stage, target: target || null, query: effectiveQuery, modelScope: allowedModels === false ? [] : allowedModels, metadata };
+  const facts = rowsForFacts(db, effectiveQuery, factLimit).map(compactFact); const models = rowsForModels(db, effectiveQuery, modelLimit, modelScope).map(compactModel);
+  const base = { schemaVersion: '2.0', stage, target: target || null, query: effectiveQuery, modelScope: modelScope === false ? [] : modelScope, metadata };
   const fitted = fitBudget(base, facts, models, budget);
   const payload = { ...base, generatedAt: now(), tokenBudget: budget, estimatedTokens: fitted.estimatedTokens, facts: fitted.selectedFacts, modelItems: fitted.selectedModels, omissions: { facts: Math.max(0, facts.length - fitted.selectedFacts.length), modelItems: Math.max(0, models.length - fitted.selectedModels.length) } };
-  payload.inputHash = stableHash({ stage, target, query: effectiveQuery, modelScope: allowedModels, facts: payload.facts.map((item) => item.hash), models: payload.modelItems.map((item) => item.hash), metadata });
+  payload.inputHash = stableHash({ stage, target, query: effectiveQuery, modelScope, facts: payload.facts.map((item) => item.hash), models: payload.modelItems.map((item) => item.hash), metadata });
   const id = sha256(`${stage}\0${target}\0${payload.inputHash}`).slice(0, 24); payload.id = id;
   const file = path.join(paths.context, stage, `${target ? target.replace(/[^a-z0-9_.-]+/gi, '-') : 'global'}.json`); writeJson(file, payload);
   db.prepare('INSERT INTO contexts(id,stage,target,query,input_hash,estimated_tokens,payload,created_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET input_hash=excluded.input_hash,estimated_tokens=excluded.estimated_tokens,payload=excluded.payload,created_at=excluded.created_at').run(id, stage, target || null, effectiveQuery, payload.inputHash, payload.estimatedTokens, JSON.stringify(payload), now());
