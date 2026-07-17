@@ -1,39 +1,53 @@
-name: Windows diagnostic
+name: CI
 
 on:
+  push:
+    branches: ['main', 'agent/**']
   pull_request:
 
 permissions:
   contents: read
 
 jobs:
-  windows-test:
-    runs-on: windows-latest
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            node-version: 22
+            upload-source: false
+          - os: ubuntu-latest
+            node-version: 24
+            upload-source: true
+          - os: windows-latest
+            node-version: 24
+            upload-source: false
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: global-template/docgen/package.json
       - name: Syntax check
         working-directory: global-template/docgen
         run: npm run check
-      - name: Unit and integration tests with concise failure artifact
+      - name: Unit and integration tests
         working-directory: global-template/docgen
-        shell: pwsh
-        run: |
-          npm test *> test-output.log
-          $exitCode = $LASTEXITCODE
-          if ($exitCode -ne 0) {
-            Select-String -Path test-output.log -Pattern 'not ok|AssertionError|ERR_ASSERTION|error:|failureType|expected:|actual:|operator:|stack:' -Context 6,20 | Out-String -Width 500 | Set-Content failure-context.txt
-            Get-Content failure-context.txt
-            exit $exitCode
-          }
-          Get-Content test-output.log -Tail 30
-      - name: Upload Windows failure context
-        if: always()
+        run: npm test
+      - name: Installer dry run
+        run: node install.mjs --dry-run --no-link-cli
+      - name: Upload exact CI source
+        if: always() && matrix.upload-source
         uses: actions/upload-artifact@v4
         with:
-          name: windows-failure-context
+          name: docgen-ci-source
           if-no-files-found: error
           retention-days: 3
-          path: global-template/docgen/failure-context.txt
+          path: |
+            global-template/docgen
+            global-template/docgen/project-template
+            install.mjs
+            VERSION
