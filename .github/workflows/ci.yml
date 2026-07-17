@@ -8,6 +8,7 @@ on:
 permissions:
   contents: read
 
+# Keep all supported runtimes aligned with the exact commands users run locally.
 jobs:
   test:
     strategy:
