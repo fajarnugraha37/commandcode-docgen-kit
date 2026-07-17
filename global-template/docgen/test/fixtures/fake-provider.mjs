@@ -18,6 +18,11 @@ const between = (text, start, end) => {
   return tail ? tail.split(end)[0] : null;
 };
 const target = between(prompt, `Write exactly one JSON file: ${tick}`, tick);
+const expectedNamesText = between(prompt, 'top-level model objects: ', '\n');
+let expectedNames = [];
+try { expectedNames = expectedNamesText ? JSON.parse(expectedNamesText.replace(/\.\s*$/, '')) : []; } catch {}
+const selectModels = (value) => expectedNames.length ? Object.fromEntries(expectedNames.filter((name) => Object.hasOwn(value, name)).map((name) => [name, value[name]])) : value;
+const noncanonical = process.env.DOCGEN_TEST_NONCANONICAL === '1';
 const write = (rel, value) => {
   if (!rel) throw new Error(`missing output path for ${stage}`);
   const file = path.join(cwd, rel);
@@ -31,21 +36,26 @@ if (process.env.DOCGEN_TEST_FAIL_BEFORE_WRITE_STAGE === stage) {
 }
 
 if (stage === 'modelCore') {
-  write(target, {
+  write(target, selectModels({
     system: {
-      components: [{ id: 'resource', kind: 'component', name: 'Resource', statement: 'Source component', classification: 'FACT', confidence: 1, evidence: [{ path: 'src/Resource.java', startLine: 1 }] }],
+      components: [{ id: 'resource', kind: 'component', name: 'Resource', statement: 'Source component', classification: noncanonical ? 'fact' : 'FACT', confidence: noncanonical ? '85%' : 1, ...(noncanonical ? { sources: ['src/Resource.java#L1-L1'] } : { evidence: [{ path: 'src/Resource.java', startLine: 1 }] }) }],
       relationships: [], workflows: [], unknowns: []
     },
     business: { actors: [], capabilities: [], concepts: [], businessRules: [], decisions: [], branchConditions: [], lifecycles: [], invariants: [], useCases: [], unknowns: [] },
     flows: { businessFlows: [], controlFlows: [], requestFlows: [], trafficFlows: [], dataFlows: [], eventFlows: [] },
     catalogs: { interfaces: [], contracts: [], endpoints: [], messageHandlers: [], dependencies: [], externalDependencies: [], dataAssets: [], dataStores: [], automations: [], scheduledJobs: [], buildArtifacts: [], configurationSurfaces: [] }
-  });
+  }));
 } else if (stage === 'modelEnterprise') {
-  write(target, {
-    security: { unknowns: [] }, operations: { unknowns: [] }, testing: { unknowns: [] },
-    'data-governance': { unknowns: [] }, decisions: { unknowns: [] }, configuration: { unknowns: [] },
-    'change-impact': { unknowns: [] }, ownership: { unknowns: [] }
-  });
+  const models = {
+    security: { unknowns: [] },
+    operations: noncanonical ? { runtimes: [{ id: 'runtime', name: 'Runtime', statement: 'Runtime inferred from repository context.', classification: 'FACT', confidence: 'high' }], unknowns: [] } : { unknowns: [] },
+    testing: { unknowns: [] },
+    'data-governance': noncanonical ? { classifications: [{ id: 'classification-catalog', name: 'Classification catalog', classification: [{ id: 'internal', name: 'Internal' }, { id: 'restricted', name: 'Restricted' }], confidence: 80 }], unknowns: [] } : { unknowns: [] },
+    decisions: { unknowns: [] }, configuration: { unknowns: [] }, 'change-impact': { unknowns: [] }, ownership: { unknowns: [] }
+  };
+  const omit = process.env.DOCGEN_TEST_OMIT_MODEL_ONCE; const marker = path.join(cwd, '.docgen', `test-omit-${omit}.marker`);
+  if (omit && expectedNames.length > 1 && Object.hasOwn(models, omit) && !fs.existsSync(marker)) { fs.mkdirSync(path.dirname(marker), { recursive: true }); fs.writeFileSync(marker, 'omitted\n'); delete models[omit]; }
+  write(target, selectModels(models));
 } else if (stage === 'plan') {
   const pageCount = Math.max(1, Number(process.env.DOCGEN_TEST_PAGE_COUNT || 1));
   write(target, {
@@ -56,7 +66,7 @@ if (stage === 'modelCore') {
       summary: index === 0 ? 'Fixture overview.' : `Fixture detail ${index + 1}.`,
       category: 'orientation', mode: 'explanation', type: 'overview', order: index + 1,
       audience: ['engineer'], coverageTags: ['architecture'], query: 'resource architecture',
-      requiredSections: [], risk: 'low', relatedPages: []
+      requiredSections: noncanonical ? ['System architecture with responsibilities'] : [], risk: 'low', relatedPages: []
     }))
   });
 } else if (stage === 'generate') {
@@ -80,7 +90,7 @@ order: ${page.order}
 
 ${page.summary}
 
-The repository contains a source component.
+${noncanonical ? '## System Architecture and Responsibilities\n\n' : ''}The repository contains a source component.
 `;
     const output = path.join(cwd, contract.outputPath);
     fs.mkdirSync(path.dirname(output), { recursive: true });
@@ -89,8 +99,8 @@ The repository contains a source component.
       schemaVersion: '2.0', pageId: page.id, pagePath: contract.outputPath,
       claims: [{
         id: `${page.id}:resource`, section: page.title,
-        statement: 'The repository contains a source component.', classification: 'FACT', confidence: 1,
-        evidence: [{ path: 'src/Resource.java', startLine: 1 }], sourceModelRefs: ['system:resource']
+        statement: 'The repository contains a source component.', classification: 'FACT', confidence: noncanonical ? 'high' : 1,
+        evidence: noncanonical ? [] : [{ path: 'src/Resource.java', startLine: 1 }], sourceModelRefs: [noncanonical ? 'system:1' : 'system:resource']
       }]
     });
   }

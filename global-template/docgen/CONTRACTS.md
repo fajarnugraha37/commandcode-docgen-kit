@@ -74,6 +74,19 @@ index -> modelCore -> modelEnterprise -> plan -> generate -> audit -> publish
 5. bounded recovery retries only the unresolved subset;
 6. a page becomes `completed` only after Markdown and traceability validation succeeds.
 
+## Model bundle recovery contract
+
+Model synthesis treats provider output as an untrusted transport shape. The orchestrator:
+
+1. extracts requested models from exact keys, normalized key variants, nested wrappers, descriptor arrays, JSON-string payloads, and direct singleton repair objects;
+2. salvages every recognized object from a partial bundle without writing partial model state;
+3. performs at most one batch repair for unresolved names, then at most one independent request per unresolved model;
+4. commits the reconciled model set only after every requested name is resolved;
+5. defaults unresolved names to an explicit `UNKNOWN` placeholder with no evidence and records them in `state.stages.<stage>.degradedModels`;
+6. supports `execution.missingModelPolicy = "fail"` for environments that prefer a hard gate after bounded recovery.
+
+A completed degraded stage is reusable on `docgen resume`, preventing an unbounded provider retry loop. `docgen status` exposes degraded model names in `summary.degradedModels`.
+
 ## Correctness gate
 
 The deterministic audit validates, at minimum:

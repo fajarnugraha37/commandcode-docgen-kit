@@ -58,14 +58,14 @@
       "audit": 20
     },
     "generationRecoveryAttempts": 3,
+    "missingModelPolicy": "placeholder",
     "recoverValidArtifacts": true
   },
   "audit": {
-    "llmEnabled": true,
+    "llmMode": "off",
     "llmRiskThreshold": 50,
-    "failOnCritical": true,
-    "failOnHigh": true,
     "failOnWarnings": false,
+    "requiredSectionsAsWarnings": true,
     "requireLineEvidenceForFacts": true,
     "requireContextBoundEvidence": true,
     "minModelReferenceCoverage": 0

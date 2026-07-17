@@ -27,4 +27,6 @@ Core shape:
 
 The named arrays are a broad vocabulary, not a checklist. Populate only evidenced concerns and use generic arrays such as `interfaces`, `dependencies`, `dataAssets`, and `automations` when technology-specific categories do not fit.
 
+Every requested top-level object is mandatory even when no repository evidence exists. Represent an empty concern with explicit empty arrays or `unknowns`; never omit the requested key.
+
 Before completion, parse the JSON you wrote and verify every requested top-level object exists.

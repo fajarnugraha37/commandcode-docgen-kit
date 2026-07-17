@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { buildInventory } from './inventory.mjs';
-import { ensureDir, estimateTokens, now, projectPaths, readJson, sha256, stableHash } from './core.mjs';
+import { ensureDir, estimateTokens, now, projectPaths, readJson, sha256, stableHash, writeJson } from './core.mjs';
+import { normalizeSemanticDocument, semanticMetadata } from './semantic.mjs';
 
 function lineNumber(text, offset) { return text.slice(0, offset).split('\n').length; }
 function snippet(text, start, radius = 4) {
@@ -138,8 +139,8 @@ function walkItems(value, model, out, parent = '') {
   if (Array.isArray(value)) { for (const item of value) walkItems(item, model, out, parent); return; }
   if (!value || typeof value !== 'object') return;
   if (value.id || value.name || value.statement) {
-    const semanticId = String(value.id ?? sha256(`${model}\0${parent}\0${JSON.stringify(value)}`).slice(0, 24)); const id = `${model}:${semanticId}`;
-    out.push({ id, semanticId, model, kind: String(value.kind ?? parent ?? 'item'), name: String(value.name ?? value.title ?? semanticId), statement: String(value.statement ?? value.summary ?? value.description ?? ''), classification: String(value.classification ?? 'UNKNOWN'), confidence: Number(value.confidence ?? 0), evidence: value.evidence ?? [], payload: value });
+    const semanticId = String(value.id ?? sha256(`${model}\0${parent}\0${JSON.stringify(value)}`).slice(0, 24)); const id = `${model}:${semanticId}`; const metadata = semanticMetadata(value);
+    out.push({ id, semanticId, model, kind: String(value.kind ?? parent ?? 'item'), name: String(value.name ?? value.title ?? semanticId), statement: String(value.statement ?? value.summary ?? value.description ?? ''), classification: metadata.classification, confidence: metadata.confidence, evidence: metadata.evidence, payload: value });
   }
   for (const [key, child] of Object.entries(value)) if (!['evidence','sourceModelRefs'].includes(key)) walkItems(child, model, out, key);
 }
@@ -152,7 +153,7 @@ export function ingestModels(root) {
   try {
     db.exec('DELETE FROM model_items; DELETE FROM model_fts;');
     for (const name of files) {
-      const model = path.basename(name, '.json'); const items = []; walkItems(readJson(path.join(paths.model, name), {}), model, items);
+      const model = path.basename(name, '.json'); const file = path.join(paths.model, name); const document = readJson(file, {}); const before = stableHash(document); normalizeSemanticDocument(document); if (stableHash(document) !== before) writeJson(file, document); const items = []; walkItems(document, model, items);
       for (const item of items) { insert.run(item.id, item.semanticId, item.model, item.kind, item.name, item.statement, item.classification, item.confidence, JSON.stringify(item.evidence), JSON.stringify(item.payload), stableHash(item.payload)); insertFts.run(item.id, item.model, item.kind, item.name, item.statement); count++; }
     }
     db.exec('COMMIT');

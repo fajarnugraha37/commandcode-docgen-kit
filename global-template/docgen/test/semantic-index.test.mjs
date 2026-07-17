@@ -189,14 +189,16 @@ test('recovery never accepts stale pre-existing plan artifacts when provider wri
   assert.equal(readJson(p.state).stages.plan.status, 'failed');
 });
 
-test('audit rejects unknown model references and publish rejects stale source artifacts', async () => {
+test('audit sanitizes unknown model references and publish rejects stale source artifacts', async () => {
   const root = fixture(); const p = projectPaths(root); const provider = installFakeProvider(root);
   fs.writeFileSync(path.join(root, 'src', 'Resource.java'), 'class Resource {}\n');
   const config = readJson(p.config); config.commandCode = { executable: provider, trust: false, skipOnboarding: false, yolo: false, maxTurns: { default: 30 } }; writeJson(p.config, config);
   const run = spawnSync(process.execPath, [cli, 'all'], { cwd: root, encoding: 'utf8', env: { ...process.env, DOCGEN_PROGRESS: '0' } }); assert.equal(run.status, 0, run.stderr || run.stdout);
   const traceFile = path.join(p.traceability, 'pages', 'overview.json'); const trace = readJson(traceFile); trace.claims[0].sourceModelRefs = ['system:does-not-exist']; writeJson(traceFile, trace);
-  await assert.rejects(() => audit(root), /Quality failed/); const report = readJson(path.join(p.audit, 'deterministic.json')); assert(report.errors.some((error) => /unknown sourceModelRef/.test(error)));
-  trace.claims[0].sourceModelRefs = ['system:resource']; writeJson(traceFile, trace); await audit(root);
+  const summary = await audit(root);
+  const sanitizedTrace = readJson(traceFile);
+  assert.deepEqual(sanitizedTrace.claims[0].sourceModelRefs, []);
+  assert.equal(summary.deterministicFailures, 0);
   fs.appendFileSync(path.join(root, 'src', 'Resource.java'), '// stale\n');
   assert.throws(() => publish(root), /stale relative to current source/);
 });
@@ -213,4 +215,30 @@ test('v1 migration preserves docs and ignore policy while archiving workflow sta
   assert.equal(fs.readFileSync(path.join(root, '.docgenignore'), 'utf8'), 'private/**\n');
   const next = readJson(p.config); assert.equal(next.schemaVersion, '2.0'); assert.equal(next.projectName, 'Migrated'); assert.equal(next.commandCode.executable, 'custom-cmdc'); assert.equal(next.ignore.binary.maxTextFileBytes, 123456);
   const marker = readJson(p.project); assert.match(marker.migrationBackup, /^\.docgen\/migration-backup\//); assert(fs.existsSync(path.join(root, marker.migrationBackup, 'evidence', 'legacy.json')));
+});
+
+test('enterprise model bundle repairs a missing decisions object without discarding valid models', () => {
+  const root = fixture(); const p = projectPaths(root); const provider = installFakeProvider(root);
+  fs.writeFileSync(path.join(root, 'src', 'Resource.java'), 'class Resource {}\n');
+  const config = readJson(p.config); config.commandCode = { executable: provider, trust: false, skipOnboarding: false, yolo: false, maxTurns: { default: 30 } }; config.budget.maxProviderCalls = 12; writeJson(p.config, config);
+  const run = spawnSync(process.execPath, [cli, 'all'], { cwd: root, encoding: 'utf8', env: { ...process.env, DOCGEN_PROGRESS: '0', DOCGEN_TEST_OMIT_MODEL_ONCE: 'decisions' } });
+  assert.equal(run.status, 0, `STDERR:\n${run.stderr}\nSTDOUT:\n${run.stdout}`);
+  assert.match(run.stderr, /modelEnterprise REPAIR \| unresolved: decisions/);
+  assert.equal(fs.existsSync(path.join(p.model, 'decisions.json')), true);
+  assert.equal(readJson(p.state).stages.modelEnterprise.status, 'completed');
+  const budget = readJson(p.budget); assert.equal(budget.usage.providerCalls, 5); assert.equal(budget.usage.failedCalls, 0);
+});
+
+test('provider boundary canonicalizes confidence, evidence aliases, classification catalogs, numeric model refs, and fuzzy required sections', () => {
+  const root = fixture(); const p = projectPaths(root); const provider = installFakeProvider(root);
+  fs.writeFileSync(path.join(root, 'src', 'Resource.java'), 'class Resource {}\n');
+  const config = readJson(p.config); config.commandCode = { executable: provider, trust: false, skipOnboarding: false, yolo: false, maxTurns: { default: 30 } }; writeJson(p.config, config);
+  const run = spawnSync(process.execPath, [cli, 'all'], { cwd: root, encoding: 'utf8', env: { ...process.env, DOCGEN_PROGRESS: '0', DOCGEN_TEST_NONCANONICAL: '1' } });
+  assert.equal(run.status, 0, `STDERR:\n${run.stderr}\nSTDOUT:\n${run.stdout}`);
+  const system = readJson(path.join(p.model, 'system.json')); const resource = system.components[0];
+  assert.equal(resource.classification, 'FACT'); assert.equal(resource.confidence, 0.85); assert.deepEqual(resource.evidence[0], { path: 'src/Resource.java', startLine: 1, endLine: 1 });
+  const operations = readJson(path.join(p.model, 'operations.json')); assert.equal(operations.runtimes[0].classification, 'INFERENCE'); assert.equal(operations.runtimes[0].confidence, 0.7);
+  const governance = readJson(path.join(p.model, 'data-governance.json')); assert.equal(Array.isArray(governance.classifications[0].classification), true);
+  const trace = readJson(path.join(p.traceability, 'pages', 'overview.json')); assert.equal(trace.claims[0].sourceModelRefs[0], 'system:resource'); assert.equal(trace.claims[0].classification, 'FACT'); assert.equal(trace.claims[0].evidence.length, 1);
+  const summary = readJson(path.join(p.audit, 'quality-summary.json')); assert.equal(summary.pass, true); assert.equal(summary.deterministicFailures, 0); assert.equal(summary.evidenceReferences >= 1, true);
 });
