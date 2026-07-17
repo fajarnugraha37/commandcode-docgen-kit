@@ -40,6 +40,9 @@ jobs:
         run: npm test
       - name: Installer dry run
         run: node install.mjs --dry-run --no-link-cli
+      - name: Bundle exact Git checkout
+        if: always() && matrix.upload-source
+        run: git bundle create pr-head.bundle HEAD
       - name: Upload exact CI source
         if: always() && matrix.upload-source
         uses: actions/upload-artifact@v4
@@ -52,3 +55,4 @@ jobs:
             global-template/docgen/project-template
             install.mjs
             VERSION
+            pr-head.bundle
