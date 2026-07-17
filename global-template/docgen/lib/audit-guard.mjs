@@ -125,11 +125,16 @@ function sanitizeSemanticObject(root, value, inventory, sourceCache) {
     const evidence = dedupeEvidence(evidenceFromAliases(value)
       .map((entry) => canonicalEvidence(root, entry, inventory, sourceCache))
       .filter(Boolean));
-    const requested = normalizeClassification(value.classification ?? value.claimClassification ?? value.certainty);
+    const rawClassification = value.classification ?? value.claimClassification ?? value.certainty;
+    const scalarClassification = rawClassification === undefined || typeof rawClassification === 'string' || typeof rawClassification === 'number';
+    const requested = normalizeClassification(rawClassification);
     const hasLineEvidence = evidence.some((entry) => entry.startLine && !entry.__stale);
-    value.classification = requested === 'FACT' && !hasLineEvidence ? 'INFERENCE' : requested;
-    value.confidence = normalizeConfidence(value.confidence ?? value.confidenceScore, value.classification);
-    if (value.classification !== 'FACT') value.confidence = Math.min(value.confidence, 0.7);
+    const normalizedClassification = requested === 'FACT' && !hasLineEvidence ? 'INFERENCE' : requested;
+    // A field named `classification` can be a domain catalog rather than semantic
+    // metadata. Preserve arrays/objects and only normalize scalar metadata.
+    if (scalarClassification) value.classification = normalizedClassification;
+    value.confidence = normalizeConfidence(value.confidence ?? value.confidenceScore, normalizedClassification);
+    if (scalarClassification && normalizedClassification !== 'FACT') value.confidence = Math.min(value.confidence, 0.7);
     value.evidence = evidence.map(({ __stale, ...entry }) => entry);
     removeEvidenceAliases(value);
     delete value.claimClassification;

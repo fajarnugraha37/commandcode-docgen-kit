@@ -189,14 +189,16 @@ test('recovery never accepts stale pre-existing plan artifacts when provider wri
   assert.equal(readJson(p.state).stages.plan.status, 'failed');
 });
 
-test('audit rejects unknown model references and publish rejects stale source artifacts', async () => {
+test('audit sanitizes unknown model references and publish rejects stale source artifacts', async () => {
   const root = fixture(); const p = projectPaths(root); const provider = installFakeProvider(root);
   fs.writeFileSync(path.join(root, 'src', 'Resource.java'), 'class Resource {}\n');
   const config = readJson(p.config); config.commandCode = { executable: provider, trust: false, skipOnboarding: false, yolo: false, maxTurns: { default: 30 } }; writeJson(p.config, config);
   const run = spawnSync(process.execPath, [cli, 'all'], { cwd: root, encoding: 'utf8', env: { ...process.env, DOCGEN_PROGRESS: '0' } }); assert.equal(run.status, 0, run.stderr || run.stdout);
   const traceFile = path.join(p.traceability, 'pages', 'overview.json'); const trace = readJson(traceFile); trace.claims[0].sourceModelRefs = ['system:does-not-exist']; writeJson(traceFile, trace);
-  await assert.rejects(() => audit(root), /Quality failed/); const report = readJson(path.join(p.audit, 'deterministic.json')); assert(report.errors.some((error) => /unknown sourceModelRef/.test(error)));
-  trace.claims[0].sourceModelRefs = ['system:resource']; writeJson(traceFile, trace); await audit(root);
+  const summary = await audit(root);
+  const sanitizedTrace = readJson(traceFile);
+  assert.deepEqual(sanitizedTrace.claims[0].sourceModelRefs, []);
+  assert.equal(summary.deterministicFailures, 0);
   fs.appendFileSync(path.join(root, 'src', 'Resource.java'), '// stale\n');
   assert.throws(() => publish(root), /stale relative to current source/);
 });
@@ -221,7 +223,7 @@ test('enterprise model bundle repairs a missing decisions object without discard
   const config = readJson(p.config); config.commandCode = { executable: provider, trust: false, skipOnboarding: false, yolo: false, maxTurns: { default: 30 } }; config.budget.maxProviderCalls = 12; writeJson(p.config, config);
   const run = spawnSync(process.execPath, [cli, 'all'], { cwd: root, encoding: 'utf8', env: { ...process.env, DOCGEN_PROGRESS: '0', DOCGEN_TEST_OMIT_MODEL_ONCE: 'decisions' } });
   assert.equal(run.status, 0, `STDERR:\n${run.stderr}\nSTDOUT:\n${run.stdout}`);
-  assert.match(run.stderr, /modelEnterprise REPAIR \| bundle omitted decisions/);
+  assert.match(run.stderr, /modelEnterprise REPAIR \| unresolved: decisions/);
   assert.equal(fs.existsSync(path.join(p.model, 'decisions.json')), true);
   assert.equal(readJson(p.state).stages.modelEnterprise.status, 'completed');
   const budget = readJson(p.budget); assert.equal(budget.usage.providerCalls, 5); assert.equal(budget.usage.failedCalls, 0);
