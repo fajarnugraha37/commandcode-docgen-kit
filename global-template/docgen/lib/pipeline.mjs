@@ -1,4 +1,5 @@
 import * as base from './pipeline-base.mjs';
+import { guardedAudit } from './audit-guard.mjs';
 import { budgetReport } from './provider.mjs';
 import { ingestModels } from './indexer.mjs';
 import { sourceSnapshot } from './core.mjs';
@@ -14,7 +15,9 @@ export async function model(root, { skipIndex = false } = {}) {
 }
 export const plan = base.plan;
 export const generate = base.generate;
-export const audit = base.audit;
+export async function audit(root) {
+  return guardedAudit(root, base.audit);
+}
 export const publish = base.publish;
 export function status(root) {
   const result = base.status(root);
