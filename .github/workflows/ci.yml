@@ -3,13 +3,13 @@ name: Apply validated fix
 on:
   push:
     branches: ['agent/phase2-validated-output']
+  pull_request:
 
 permissions:
   contents: write
 
 jobs:
   apply-fix:
-    if: github.event.head_commit.message == 'ci: apply validated regression fix'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,6 +21,10 @@ jobs:
       - name: Apply audited regression patch
         shell: bash
         run: |
+          if [ "$(git log -1 --pretty=%s)" != "ci: run validated regression fix in PR" ]; then
+            echo "Patch job is not needed for this commit."
+            exit 0
+          fi
           python3 <<'PY'
           from pathlib import Path
 
@@ -49,11 +53,11 @@ jobs:
 
           test = Path('global-template/docgen/test/semantic-index.test.mjs')
           text = test.read_text()
-          text = text.replace(
-              "test('audit rejects unknown model references and publish rejects stale source artifacts', async () => {",
-              "test('audit sanitizes unknown model references and publish rejects stale source artifacts', async () => {",
-              1,
-          )
+          old_name = "test('audit rejects unknown model references and publish rejects stale source artifacts', async () => {"
+          new_name = "test('audit sanitizes unknown model references and publish rejects stale source artifacts', async () => {"
+          if text.count(old_name) != 1:
+              raise SystemExit(f'test-name replacement count was {text.count(old_name)}, expected 1')
+          text = text.replace(old_name, new_name)
           old = """  await assert.rejects(() => audit(root), /Quality failed/); const report = readJson(path.join(p.audit, 'deterministic.json')); assert(report.errors.some((error) => /unknown sourceModelRef/.test(error)));
             trace.claims[0].sourceModelRefs = ['system:resource']; writeJson(traceFile, trace); await audit(root);
           """
@@ -75,7 +79,11 @@ jobs:
         working-directory: global-template/docgen
         run: npm run check && npm test
       - name: Commit validated patch
+        shell: bash
         run: |
+          if [ "$(git log -1 --pretty=%s)" != "ci: run validated regression fix in PR" ]; then
+            exit 0
+          fi
           git config user.name 'docgen-ci'
           git config user.email 'actions@users.noreply.github.com'
           git add global-template/docgen/lib/audit-guard.mjs global-template/docgen/test/semantic-index.test.mjs
