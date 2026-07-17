@@ -1,7 +1,7 @@
 import path from 'node:path';
 import * as base from './pipeline-base.mjs';
 import { guardedAudit } from './audit-guard.mjs';
-import { advisoryLlmAuditSummary } from './audit-policy.mjs';
+import { advisoryLlmAuditSummary, auditLlmMode, deterministicOnlyAuditSummary } from './audit-policy.mjs';
 import { budgetReport } from './provider.mjs';
 import { ingestModels } from './indexer.mjs';
 import { loadConfig, projectPaths, readJson, sourceSnapshot, updateStage, writeJson } from './core.mjs';
@@ -17,23 +17,42 @@ export async function model(root, { skipIndex = false } = {}) {
 }
 export const plan = base.plan;
 export const generate = base.generate;
+
+async function finishDeterministicOnlyAudit(root) {
+  const paths = projectPaths(root);
+  const quality = readJson(path.join(paths.audit, 'deterministic.json'));
+  const summary = deterministicOnlyAuditSummary(quality);
+  writeJson(path.join(paths.audit, 'quality-summary.json'), summary);
+  updateStage(root, 'audit', summary.pass ? 'completed' : 'failed', {
+    ...summary,
+    inputHash: summary.auditInputHash,
+    mode: 'deterministic-only'
+  });
+  if (!summary.pass) throw new Error(`Quality failed before LLM audit: deterministicFailures=${summary.deterministicFailures}, highRiskFindings=0. No audit-provider tokens were spent. See .docgen/audit/deterministic.json.`);
+  console.log('[docgen] audit DETERMINISTIC-ONLY | pass | provider calls 0');
+  return summary;
+}
+
 export async function audit(root) {
+  const config = loadConfig(root);
+  const llmMode = auditLlmMode(config);
   try {
-    return await guardedAudit(root, base.audit);
+    return await guardedAudit(root, llmMode === 'off' ? finishDeterministicOnlyAudit : base.audit);
   } catch (error) {
     const paths = projectPaths(root);
     const summaryFile = path.join(paths.audit, 'quality-summary.json');
     const summary = readJson(summaryFile, null);
-    const advisory = advisoryLlmAuditSummary(summary, loadConfig(root));
+    const advisory = advisoryLlmAuditSummary(summary, config);
     if (advisory) {
       writeJson(summaryFile, advisory);
       updateStage(root, 'audit', 'completed', {
         ...advisory,
         inputHash: advisory.auditInputHash,
         advisory: true,
+        llmMode,
         originalError: error.message
       });
-      console.warn(`[docgen] audit ADVISORY | ${advisory.advisoryHighRiskFindings} high/critical LLM finding(s) recorded but not blocking. Set audit.blockOnLlmFindings=true to enforce them.`);
+      console.warn(`[docgen] audit ADVISORY | ${advisory.advisoryHighRiskFindings} high/critical LLM finding(s) recorded but not blocking.`);
       return advisory;
     }
     throw error;
