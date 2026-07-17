@@ -9,11 +9,21 @@ import { projectPaths, readJson, writeJson } from '../lib/core.mjs';
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 
+function providerExecutable(paths) {
+  const source = path.join(testDir, 'fixtures', 'model-bundle-provider.mjs');
+  if (process.platform !== 'win32') return source;
+  const dir = path.join(paths.base, 'test-bin'); fs.mkdirSync(dir, { recursive: true });
+  const script = path.join(dir, 'model-bundle-provider.mjs'); fs.copyFileSync(source, script);
+  const shim = path.join(dir, 'model-bundle-provider.cmd');
+  fs.writeFileSync(shim, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
+  return shim;
+}
+
 function fixture({ missingPolicy = 'placeholder' } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'docgen-bundle-')); const paths = projectPaths(root);
   fs.mkdirSync(path.join(root, 'src'), { recursive: true }); fs.writeFileSync(path.join(root, 'src', 'Resource.java'), 'class Resource {}\n');
   fs.mkdirSync(path.dirname(paths.config), { recursive: true });
-  const provider = path.join(testDir, 'fixtures', 'model-bundle-provider.mjs');
+  const provider = providerExecutable(paths);
   writeJson(paths.project, { schemaVersion: '2.0', kitVersion: '2.0.0' });
   writeJson(paths.config, {
     schemaVersion: '2.0', projectName: 'Bundle Fixture',
