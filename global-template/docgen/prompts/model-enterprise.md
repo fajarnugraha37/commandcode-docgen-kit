@@ -25,4 +25,6 @@ Expected concerns, only when evidenced:
 - change-impact: change surfaces, direct/transitive effects, compatibility, migration risks, tests and operations affected;
 - ownership: team, component, data and operational ownership, RACI, approval, escalation.
 
+Every requested top-level object is mandatory even when no repository evidence exists. Represent an empty concern with explicit empty arrays or `unknowns`; never omit the requested key.
+
 Before completion, parse the JSON and verify every requested top-level object exists.

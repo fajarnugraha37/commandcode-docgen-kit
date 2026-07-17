@@ -58,6 +58,7 @@
       "audit": 20
     },
     "generationRecoveryAttempts": 3,
+    "missingModelPolicy": "placeholder",
     "recoverValidArtifacts": true
   },
   "audit": {
