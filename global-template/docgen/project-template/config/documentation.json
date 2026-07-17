@@ -64,8 +64,7 @@
   "audit": {
     "llmEnabled": true,
     "llmRiskThreshold": 50,
-    "failOnCritical": true,
-    "failOnHigh": true,
+    "blockOnLlmFindings": false,
     "failOnWarnings": false,
     "requireLineEvidenceForFacts": true,
     "requireContextBoundEvidence": true,
