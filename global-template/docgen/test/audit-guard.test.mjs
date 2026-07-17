@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { guardedAudit, sanitizeAuditInputs } from '../lib/audit-guard.mjs';
+import { audit as pipelineAudit } from '../lib/pipeline.mjs';
 import { projectPaths, sha256, writeJson } from '../lib/core.mjs';
 
 function pageText(page) {
@@ -54,6 +55,19 @@ test('deterministic failure stops before the costly audit provider', async () =>
   assert.equal(summary.highRiskFindings, 0);
   assert.equal(summary.llmSkippedReason, 'deterministic-fail-fast');
   assert.equal(summary.pass, false);
+});
+
+test('legacy llmEnabled config is migrated to deterministic-only audit with provider calls zero', async () => {
+  const { root, paths, pages } = fixture();
+  writeJson(paths.plan, { schemaVersion: '2.0', pages: [pages[0]] });
+  const result = await pipelineAudit(root);
+  const migrated = JSON.parse(fs.readFileSync(paths.config, 'utf8'));
+  assert.equal(migrated.audit.llmMode, 'off');
+  assert.equal(migrated.audit.requiredSectionsAsWarnings, true);
+  assert.equal(result.pass, true);
+  assert.equal(result.llmAuditedPages, 0);
+  assert.equal(result.highRiskFindings, 0);
+  assert.equal(result.llmSkippedReason, 'llm-audit-off');
 });
 
 test('sanitizer drops out-of-context evidence and refs and downgrades unsupported FACT', () => {
