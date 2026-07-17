@@ -1,6 +1,7 @@
 import path from 'node:path';
 import * as base from './pipeline-base.mjs';
 import { guardedAudit } from './audit-guard.mjs';
+import { advisoryLlmAuditSummary } from './audit-policy.mjs';
 import { budgetReport } from './provider.mjs';
 import { ingestModels } from './indexer.mjs';
 import { loadConfig, projectPaths, readJson, sourceSnapshot, updateStage, writeJson } from './core.mjs';
@@ -23,14 +24,8 @@ export async function audit(root) {
     const paths = projectPaths(root);
     const summaryFile = path.join(paths.audit, 'quality-summary.json');
     const summary = readJson(summaryFile, null);
-    const blockOnLlmFindings = loadConfig(root).audit?.blockOnLlmFindings === true;
-    if (!blockOnLlmFindings && summary?.deterministicFailures === 0 && summary.highRiskFindings > 0) {
-      const advisory = {
-        ...summary,
-        pass: true,
-        llmFindingsBlocking: false,
-        advisoryHighRiskFindings: summary.highRiskFindings
-      };
+    const advisory = advisoryLlmAuditSummary(summary, loadConfig(root));
+    if (advisory) {
       writeJson(summaryFile, advisory);
       updateStage(root, 'audit', 'completed', {
         ...advisory,
@@ -38,7 +33,7 @@ export async function audit(root) {
         advisory: true,
         originalError: error.message
       });
-      console.warn(`[docgen] audit ADVISORY | ${summary.highRiskFindings} high/critical LLM finding(s) recorded but not blocking. Set audit.blockOnLlmFindings=true to enforce them.`);
+      console.warn(`[docgen] audit ADVISORY | ${advisory.advisoryHighRiskFindings} high/critical LLM finding(s) recorded but not blocking. Set audit.blockOnLlmFindings=true to enforce them.`);
       return advisory;
     }
     throw error;
