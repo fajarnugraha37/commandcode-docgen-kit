@@ -18,6 +18,26 @@ export async function model(root, { skipIndex = false } = {}) {
 export const plan = base.plan;
 export const generate = base.generate;
 
+function ensureAuditDefaults(root) {
+  const paths = projectPaths(root);
+  const config = loadConfig(root);
+  config.audit ??= {};
+  let changed = false;
+  if (!['off', 'advisory', 'blocking'].includes(String(config.audit.llmMode ?? '').toLowerCase())) {
+    config.audit.llmMode = 'off';
+    changed = true;
+  }
+  if (config.audit.requiredSectionsAsWarnings === undefined) {
+    config.audit.requiredSectionsAsWarnings = true;
+    changed = true;
+  }
+  if (changed) {
+    writeJson(paths.config, config);
+    console.log('[docgen] audit CONFIG MIGRATION | llmMode=off | requiredSectionsAsWarnings=true');
+  }
+  return config;
+}
+
 async function finishDeterministicOnlyAudit(root) {
   const paths = projectPaths(root);
   const quality = readJson(path.join(paths.audit, 'deterministic.json'));
@@ -34,7 +54,7 @@ async function finishDeterministicOnlyAudit(root) {
 }
 
 export async function audit(root) {
-  const config = loadConfig(root);
+  const config = ensureAuditDefaults(root);
   const llmMode = auditLlmMode(config);
   try {
     return await guardedAudit(root, llmMode === 'off' ? finishDeterministicOnlyAudit : base.audit);
